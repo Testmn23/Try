@@ -6,7 +6,7 @@
 // @ts-ignore: Deno deploy will provide Buffer
 import { Buffer } from 'node:buffer';
 import { GoogleGenAI, Modality, Part, Type } from '@google/genai';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 export const config = {
   runtime: 'edge',
@@ -24,7 +24,7 @@ const textModel = 'gemini-2.5-flash';
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error("Supabase environment variables for admin client are not set.");
 }
-const supabaseAdmin = createClient(
+const supabaseAdmin: SupabaseClient = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
 );
@@ -43,7 +43,7 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 // Helper to parse data URLs
 function parseDataUrl(dataUrl: string) {
     const match = dataUrl.match(/^data:(image\/\w+);base64,(.*)$/);
-    if (!match) {
+    if (!match || typeof match[1] !== 'string' || typeof match[2] !== 'string') {
         throw new Error('Invalid data URL format');
     }
     const mimeType = match[1];
@@ -72,7 +72,7 @@ async function imageUrlToPart(url: string): Promise<Part> {
 async function uploadImageToSupabase(imageBytes: ArrayBuffer, userId: string, fileName: string): Promise<string> {
     const filePath = `${userId}/${fileName}`;
     const { error } = await supabaseAdmin.storage
-        .from('images')
+        .from('generated_images')
         .upload(filePath, imageBytes, {
             contentType: 'image/png',
             upsert: true,
@@ -82,7 +82,7 @@ async function uploadImageToSupabase(imageBytes: ArrayBuffer, userId: string, fi
         throw new Error(`Supabase upload error: ${error.message}`);
     }
 
-    const { data } = supabaseAdmin.storage.from('images').getPublicUrl(filePath);
+    const { data } = supabaseAdmin.storage.from('generated_images').getPublicUrl(filePath);
     return data.publicUrl;
 }
 
@@ -216,6 +216,11 @@ ${wardrobeList}
             }
         }
     });
+
+    if (!response.text) {
+        console.error('Gemini suggestOutfit response dump:', JSON.stringify(response, null, 2));
+        throw new Error('AI suggestion failed: Received an empty response.');
+    }
 
     const jsonText = response.text.trim();
     const sanitizedJson = jsonText.replace(/^```json\n?/, '').replace(/\n?```$/, '');
