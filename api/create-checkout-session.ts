@@ -11,9 +11,9 @@ export const config = {
 
 // Map credit amounts to product IDs created in the Dodo Payments dashboard
 const creditProductMap: Record<number, string> = {
-    10: process.env.DODO_PRODUCT_ID_10_CREDITS || 'prod_starter_10',
+    10: process.env.DODO_PRODUCT_ID_10_CREDITS || 'pdt_dCBqVbL2gBE0GDmXSI9W7',
     50: process.env.DODO_PRODUCT_ID_50_CREDITS || 'pdt_Gm7aZCezFkbsV7Y05fptD',
-    100: process.env.DODO_PRODUCT_ID_100_CREDITS || 'prod_pro_100',
+    100: process.env.DODO_PRODUCT_ID_100_CREDITS || 'pdt_3TsAyeLGzlP459JmQN4mk',
 };
 
 export default async function handler(req: Request) {
