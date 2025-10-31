@@ -4,7 +4,8 @@ Run these SQL commands in your Supabase SQL Editor to set up the necessary table
 
 ## 1. Profiles Table
 
-This table stores user-specific data that isn't part of the default authentication.
+This table stores user-specific data, including the number of credits.
+The `credits` column is set to a `default` of 10, so every new user automatically starts with 10 credits.
 
 ```sql
 -- Create a table for public user profiles
@@ -37,8 +38,10 @@ This function automatically creates a profile entry when a new user signs up.
 create function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.profiles (id, credits)
-  values (new.id, 10);
+  -- Inserts a new row into public.profiles for the new user.
+  -- The 'credits' column will automatically be set to its default value (10).
+  insert into public.profiles (id)
+  values (new.id);
   return new;
 end;
 $$ language plpgsql security definer;
