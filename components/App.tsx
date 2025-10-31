@@ -7,6 +7,8 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabaseClient';
+import { DodoPayments } from 'dodopayments-checkout';
+
 
 import StartScreen from './StartScreen';
 import Canvas from './Canvas';
@@ -27,6 +29,7 @@ import AspectRatioSelector from './AspectRatioSelector';
 import LegalModal from './LegalModal';
 import ProfessionalShotsPanel from './ProfessionalShotsPanel';
 import Auth from './Auth';
+import PurchaseCreditsModal from './PurchaseCreditsModal';
 
 
 const POSE_INSTRUCTIONS = [
@@ -37,6 +40,13 @@ const POSE_INSTRUCTIONS = [
   "Walking towards camera",
   "Leaning against a wall",
 ];
+
+// A basic type definition for Dodo Payment events since the library doesn't export it.
+interface CheckoutEvent {
+  event_type: "checkout.opened" | "checkout.payment_page_opened" | "checkout.customer_details_submitted" | "checkout.closed" | "checkout.redirect" | "checkout.error";
+  data?: any;
+}
+
 
 const useMediaQuery = (query: string): boolean => {
   const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
@@ -78,6 +88,25 @@ const App: React.FC = () => {
   });
   const [savedModels, setSavedModels] = useState<SavedModel[]>([]);
   const [legalModalContent, setLegalModalContent] = useState<string | null>(null);
+  const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
+
+  const fetchProfile = useCallback(async () => {
+      if (!session) return;
+      try {
+          const { data, error } = await supabase
+              .from('profiles')
+              .select('credits')
+              .eq('id', session.user.id)
+              .single();
+          if (error) throw error;
+          if (data) {
+              setCredits(data.credits);
+          }
+      } catch (error) {
+          console.error('Error fetching profile', error);
+          setError('Could not load your profile.');
+      }
+  }, [session]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -92,21 +121,24 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (session) {
-        // Fetch profile (credits)
-        const fetchProfile = async () => {
-            const { data, error } = await supabase
-                .from('profiles')
-                .select('credits')
-                .eq('id', session.user.id)
-                .single();
-            if (error) {
-                console.error('Error fetching profile', error);
-                setError('Could not load your profile.');
-            } else if (data) {
-                setCredits(data.credits);
+    DodoPayments.Initialize({
+        mode: "test",
+        onEvent: (event: CheckoutEvent) => {
+            console.log("Dodo Event:", event);
+            if (event.event_type === 'checkout.closed') {
+                // In a real app, a webhook is the reliable way to update credits.
+                // This is a simulation for demonstration purposes.
+                console.log('Checkout closed, refetching profile to check for new credits.');
+                fetchProfile();
+                setIsPurchaseModalOpen(false); // Close modal when Dodo checkout closes
             }
-        };
+        },
+    });
+  }, [fetchProfile]);
+
+  useEffect(() => {
+    if (session) {
+        fetchProfile();
 
         // Fetch saved models
         const fetchSavedModels = async () => {
@@ -127,15 +159,13 @@ const App: React.FC = () => {
                 setSavedModels(mappedModels);
             }
         };
-
-        fetchProfile();
         fetchSavedModels();
     } else {
         // Clear user-specific data on logout
         setCredits(0);
         setSavedModels([]);
     }
-  }, [session]);
+  }, [session, fetchProfile]);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -195,19 +225,39 @@ const App: React.FC = () => {
     }
   };
 
-  const handleAddCredits = async () => {
-    if (!session) return;
-    const newCredits = 10;
-    setCredits(newCredits);
+  const handleAddCredits = () => {
     setError(null);
-    const { error } = await supabase
-        .from('profiles')
-        .update({ credits: newCredits })
-        .eq('id', session.user.id);
-    if (error) {
-        setError("Couldn't add credits.");
-        setCredits(0); // Revert
+    setIsPurchaseModalOpen(true);
+  };
+  
+  const handlePurchase = async (creditAmount: number) => {
+    if (!session) {
+        setError("You must be logged in to purchase credits.");
+        return;
     }
+    
+    setError(null);
+    setIsPurchaseModalOpen(false);
+    setLoadingMessage(`Redirecting to payment for ${creditAmount} credits...`);
+    setIsLoading(true);
+
+    // In a real app, this is where you'd call your backend to create a checkout session.
+    // The backend would use Dodo's server-side SDK to generate a unique checkoutUrl.
+    // It would also associate the session with the user ID and credit amount.
+    
+    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate API latency
+
+    // This is a placeholder URL. In a real app, this should come from your server.
+    const checkoutUrl = "https://checkout.dodopayments.com/session/cks_placeholder_for_demo";
+
+    try {
+        await DodoPayments.Checkout.open({ checkoutUrl });
+    } catch (error) {
+        console.error("Failed to open checkout:", error);
+        setError(getFriendlyErrorMessage(error, "Could not open the payment window"));
+    }
+    // Note: We don't setIsLoading(false) here because the Dodo overlay is now active.
+    // The 'checkout.closed' event will handle UI state restoration.
   };
 
   const handleModelFinalized = (url: string) => {
@@ -645,6 +695,12 @@ const App: React.FC = () => {
       </AnimatePresence>
       <Footer isOnDressingScreen={!!modelImageUrl} onOpenLegal={setLegalModalContent} />
       <LegalModal contentKey={legalModalContent} onClose={() => setLegalModalContent(null)} />
+      <PurchaseCreditsModal 
+        isOpen={isPurchaseModalOpen}
+        onClose={() => setIsPurchaseModalOpen(false)}
+        onPurchase={handlePurchase}
+        isLoading={isLoading && loadingMessage.includes('Redirecting to payment')}
+      />
     </div>
   );
 };

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
-    "@google/genai": "^1.10.0"
+    "@google/genai": "^1.10.0",
+    "dodopayments-checkout": "^1.0.0"
   }
 }
