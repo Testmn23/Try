@@ -24,8 +24,9 @@ const SavedLooksPanel: React.FC<SavedLooksPanelProps> = ({ savedOutfits, onLoadO
       <div className="grid grid-cols-2 gap-3">
         {savedOutfits.map((outfit) => (
           <div key={outfit.id} className="relative group aspect-square">
+            {/* Fix: Property 'thumbnailUrl' does not exist on type 'SavedOutfit'. Did you mean 'thumbnail_url'? */}
             <img
-              src={outfit.thumbnailUrl}
+              src={outfit.thumbnail_url}
               alt={outfit.name}
               className="w-full h-full object-cover rounded-lg border border-stone-200 dark:border-stone-800"
             />
