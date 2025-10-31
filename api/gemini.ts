@@ -127,7 +127,7 @@ async function handleImageGeneration(promptParts: Part[], userId: string, output
     });
 
     const imagePart = response.candidates?.[0]?.content?.parts?.find(part => part.inlineData);
-    if (!imagePart || !imagePart.inlineData) {
+    if (!imagePart?.inlineData?.data) {
         console.error('Gemini API response dump:', JSON.stringify(response, null, 2));
         throw new Error('Image generation failed: No image data in response from Gemini.');
     }

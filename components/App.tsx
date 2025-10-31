@@ -138,10 +138,15 @@ const App: React.FC = () => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+       if (_event === 'SIGNED_IN' && appState === 'landing') {
+        setAppState('app');
+      } else if (_event === 'SIGNED_OUT') {
+        setAppState('landing');
+      }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [appState]);
 
   useEffect(() => {
     if (session) {
@@ -405,7 +410,6 @@ const App: React.FC = () => {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     // state will clear via onAuthStateChange listener
-    setAppState('landing');
     handleNewModel(); // Reset app state
   };
 
@@ -614,6 +618,15 @@ const App: React.FC = () => {
     exit: { opacity: 0, scale: 0.98, transition: { duration: 0.3, ease: customEase } },
   };
   
+  const handleEnterApp = () => {
+    if (session) {
+      setAppState('app');
+    } else {
+      // This will trigger the Auth component to show
+      setAppState('app');
+    }
+  }
+  
   if (paymentStatusView === 'success') {
     return <PaymentSuccessPage onContinue={() => {
         setPaymentStatusView(null);
@@ -625,6 +638,20 @@ const App: React.FC = () => {
       return <PaymentFailurePage onContinue={() => setPaymentStatusView(null)} onTryAgain={handleTryAgainPurchase} />;
   }
 
+  if (appState === 'landing') {
+    return (
+      <motion.div
+        key="landing"
+        variants={viewVariants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+      >
+        <LandingPage onEnter={handleEnterApp} />
+      </motion.div>
+    )
+  }
+  
   if (!session) {
     return (
       <div className="font-sora bg-stone-50 text-stone-900 dark:bg-stone-950 dark:text-stone-200">
@@ -639,17 +666,7 @@ const App: React.FC = () => {
         {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       </AnimatePresence>
       <AnimatePresence mode="wait">
-        {appState === 'landing' ? (
-          <motion.div
-            key="landing"
-            variants={viewVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-          >
-            <LandingPage onEnter={() => setAppState('app')} />
-          </motion.div>
-        ) : !modelImageUrl ? (
+        {!modelImageUrl ? (
           <motion.div
             key="start-screen"
             className="w-screen min-h-screen flex items-start sm:items-center justify-center p-4 pb-20"
@@ -715,7 +732,7 @@ const App: React.FC = () => {
               </div>
 
               <aside 
-                className={`absolute md:relative md:flex-shrink-0 bottom-0 right-0 h-auto md:h-full w-full md:w-1/3 md:max-w-sm bg-stone-50/80 dark:bg-stone-950/80 backdrop-blur-lg flex flex-col border-t md:border-t-0 md:border-l border-stone-200/60 dark:border-stone-800/60 transition-transform duration-500 ease-in-out ${isSheetCollapsed ? 'translate-y-[calc(100%-5rem)]' : 'translate-y-0'} md:translate-y-0`}
+                className={`absolute md:relative md:flex-shrink-0 bottom-0 right-0 max-h-[90vh] md:h-full md:max-h-none w-full md:w-1/3 md:max-w-sm bg-stone-50/80 dark:bg-stone-950/80 backdrop-blur-lg flex flex-col border-t md:border-t-0 md:border-l border-stone-200/60 dark:border-stone-800/60 transition-transform duration-500 ease-in-out ${isSheetCollapsed ? 'translate-y-[calc(100%-5rem)]' : 'translate-y-0'} md:translate-y-0`}
                 style={{ transitionProperty: 'transform' }}
               >
                   <button 
