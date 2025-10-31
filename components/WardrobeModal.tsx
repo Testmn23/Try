@@ -4,7 +4,7 @@
 */
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { WardrobeItem } from '../types';
-import { UploadCloudIcon, CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon } from './icons';
+import { UploadCloudIcon, CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon, Trash2Icon } from './icons';
 import ImageCropModal from './ImageCropModal';
 
 interface WardrobePanelProps {
@@ -13,6 +13,7 @@ interface WardrobePanelProps {
   isLoading: boolean;
   wardrobe: WardrobeItem[];
   credits: number;
+  onDeleteItem: (id: string) => void;
 }
 
 type Category = 'clothing' | 'accessory';
@@ -51,7 +52,7 @@ const urlToFile = (url: string, filename: string): Promise<File> => {
     });
 };
 
-const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGarmentIds, isLoading, wardrobe, credits }) => {
+const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGarmentIds, isLoading, wardrobe, credits, onDeleteItem }) => {
     const [error, setError] = useState<string | null>(null);
     const [isCropModalOpen, setIsCropModalOpen] = useState(false);
     const [imageToCrop, setImageToCrop] = useState<string | null>(null);
@@ -189,24 +190,35 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
             >
                 {filteredWardrobe.map((item) => {
                 const isActive = activeGarmentIds.includes(item.id);
+                const isCustom = item.id.startsWith('custom-');
                 return (
-                    <button
-                        key={item.id}
-                        onClick={() => handleGarmentClick(item)}
-                        disabled={isLoading || isActive || credits <= 0}
-                        className="flex-shrink-0 w-24 h-24 relative aspect-square border border-stone-200 dark:border-stone-800 rounded-lg overflow-hidden transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-fuchsia-500 group disabled:opacity-60 disabled:cursor-not-allowed"
-                        aria-label={`Select ${item.name}`}
-                    >
-                        <img src={item.url} alt={item.name} className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <p className="text-white text-xs font-bold text-center p-1">{item.name}</p>
-                        </div>
-                        {isActive && (
-                            <div className="absolute inset-0 bg-stone-900/70 dark:bg-stone-950/70 border-2 border-fuchsia-500 rounded-lg flex items-center justify-center">
-                                <CheckCircleIcon className="w-8 h-8 text-white" />
+                    <div key={item.id} className="relative group">
+                        <button
+                            onClick={() => handleGarmentClick(item)}
+                            disabled={isLoading || isActive || credits <= 0}
+                            className="flex-shrink-0 w-24 h-24 relative aspect-square border border-stone-200 dark:border-stone-800 rounded-lg overflow-hidden transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-fuchsia-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                            aria-label={`Select ${item.name}`}
+                        >
+                            <img src={item.url} alt={item.name} className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <p className="text-white text-xs font-bold text-center p-1">{item.name}</p>
                             </div>
+                            {isActive && (
+                                <div className="absolute inset-0 bg-stone-900/70 dark:bg-stone-950/70 border-2 border-fuchsia-500 rounded-lg flex items-center justify-center">
+                                    <CheckCircleIcon className="w-8 h-8 text-white" />
+                                </div>
+                            )}
+                        </button>
+                        {isCustom && !isActive && (
+                            <button 
+                                onClick={() => onDeleteItem(item.id)}
+                                className="absolute -top-1 -right-1 z-10 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 hover:scale-110 transition-all"
+                                aria-label={`Delete ${item.name}`}
+                            >
+                                <Trash2Icon className="w-3 h-3"/>
+                            </button>
                         )}
-                    </button>
+                    </div>
                 );
                 })}
                 <label htmlFor="custom-garment-upload" className={`flex-shrink-0 w-24 h-24 relative aspect-square border-2 border-dashed border-stone-300 dark:border-stone-700 rounded-lg flex flex-col items-center justify-center text-stone-500 dark:text-stone-400 transition-colors ${isLoading || credits <= 0 ? 'cursor-not-allowed bg-stone-100 dark:bg-stone-900' : 'hover:border-fuchsia-500 hover:text-fuchsia-500 cursor-pointer'}`}>

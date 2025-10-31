@@ -14,14 +14,14 @@ import Canvas from './Canvas';
 import WardrobePanel from './WardrobeModal';
 import OutfitStack from './OutfitStack';
 import { generateVirtualTryOnImage, generatePoseVariation, generateImageVariation, suggestOutfit } from '../services/geminiService';
-import { OutfitLayer, WardrobeItem, Theme, SavedModel } from '../types';
-import { ChevronDownIcon, ChevronUpIcon, SparklesIcon, DownloadIcon, LogOutIcon } from './icons';
+import { OutfitLayer, WardrobeItem, Theme, SavedModel, SavedOutfit, ToastMessage } from '../types';
+// Fix: Import missing ChevronUpIcon and ChevronDownIcon.
+import { SparklesIcon, DownloadIcon, BookmarkIcon, ChevronUpIcon, ChevronDownIcon } from './icons';
 import { defaultWardrobe } from '../wardrobe';
 import Footer from './Footer';
 import { getFriendlyErrorMessage } from '../lib/utils';
 import Spinner from './Spinner';
 import LandingPage from './LandingPage';
-import ThemeSwitcher from './ThemeSwitcher';
 import PromptEditor from './PromptEditor';
 import BackgroundSelector from './BackgroundSelector';
 import AspectRatioSelector from './AspectRatioSelector';
@@ -31,6 +31,9 @@ import Auth from './Auth';
 import PurchaseCreditsModal from './PurchaseCreditsModal';
 import PaymentSuccessPage from './PaymentSuccessPage';
 import PaymentFailurePage from './PaymentFailurePage';
+import Toast from './Toast';
+import ProfileMenu from './ProfileMenu';
+import SavedLooksPanel from './SavedLooksPanel';
 
 
 const POSE_INSTRUCTIONS = [
@@ -73,7 +76,7 @@ const App: React.FC = () => {
   const [currentOutfitIndex, setCurrentOutfitIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastMessage | null>(null);
   const [currentPoseIndex, setCurrentPoseIndex] = useState(0);
   const [isSheetCollapsed, setIsSheetCollapsed] = useState(false);
   const [wardrobe, setWardrobe] = useState<WardrobeItem[]>(defaultWardrobe);
@@ -82,15 +85,22 @@ const App: React.FC = () => {
     return (localStorage.getItem('theme') as Theme) || 'system';
   });
   const [savedModels, setSavedModels] = useState<SavedModel[]>([]);
+  const [savedOutfits, setSavedOutfits] = useState<SavedOutfit[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(true);
   const [legalModalContent, setLegalModalContent] = useState<string | null>(null);
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
   const [paymentStatusView, setPaymentStatusView] = useState<'success' | 'failure' | null>(null);
 
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'error', duration = 4000) => {
+    setToast({ message, type });
+    setTimeout(() => {
+        setToast(null);
+    }, duration);
+  };
 
   const fetchProfile = useCallback(async () => {
       if (!session) return;
       try {
-          setIsLoading(true);
           const { data, error } = await supabase
               .from('profiles')
               .select('credits')
@@ -102,9 +112,7 @@ const App: React.FC = () => {
           }
       } catch (error) {
           console.error('Error fetching profile', error);
-          setError('Could not load your profile.');
-      } finally {
-        setIsLoading(false);
+          showToast('Could not load your profile.', 'error');
       }
   }, [session]);
 
@@ -138,31 +146,42 @@ const App: React.FC = () => {
   useEffect(() => {
     if (session) {
         fetchProfile();
+        setModelsLoading(true);
 
-        // Fetch saved models
-        const fetchSavedModels = async () => {
-             const { data, error } = await supabase
-                .from('saved_models')
-                .select('*')
-                .eq('user_id', session.user.id)
-                .order('created_at', { ascending: false });
-            if (error) {
-                console.error('Error fetching saved models', error);
-                setError('Could not load your saved models.');
-            } else if (data) {
-                const mappedModels: SavedModel[] = data.map(dbModel => ({
-                    id: dbModel.id,
-                    name: dbModel.name,
-                    imageUrl: dbModel.image_url,
-                }));
+        const fetchUserData = async () => {
+            try {
+                const [modelsRes, outfitsRes] = await Promise.all([
+                    supabase.from('saved_models').select('*').eq('user_id', session.user.id).order('created_at', { ascending: false }),
+                    supabase.from('saved_outfits').select('*').eq('user_id', session.user.id).order('created_at', { ascending: false })
+                ]);
+
+                if (modelsRes.error) throw modelsRes.error;
+                const mappedModels: SavedModel[] = modelsRes.data.map(dbModel => ({ id: dbModel.id, name: dbModel.name, imageUrl: dbModel.image_url }));
                 setSavedModels(mappedModels);
+                
+                if (outfitsRes.error) throw outfitsRes.error;
+                const mappedOutfits: SavedOutfit[] = outfitsRes.data.map(dbOutfit => ({
+                    id: dbOutfit.id,
+                    name: dbOutfit.name,
+                    thumbnailUrl: dbOutfit.thumbnail_url,
+                    outfitData: dbOutfit.outfit_data
+                }));
+                setSavedOutfits(mappedOutfits);
+
+            } catch (error) {
+                console.error('Error fetching user data', error);
+                showToast('Could not load your saved creations.', 'error');
+            } finally {
+                setModelsLoading(false);
             }
         };
-        fetchSavedModels();
+        fetchUserData();
     } else {
         // Clear user-specific data on logout
         setCredits(0);
         setSavedModels([]);
+        setSavedOutfits([]);
+        setModelsLoading(false);
     }
   }, [session, fetchProfile]);
 
@@ -219,23 +238,21 @@ const App: React.FC = () => {
         .update({ credits: newCredits })
         .eq('id', session.user.id);
     if (error) {
-        setError("Couldn't save your credit usage.");
+        showToast("Couldn't save your credit usage.", 'error');
         setCredits(oldCredits); // Revert on error
     }
   };
 
   const handleAddCredits = () => {
-    setError(null);
     setIsPurchaseModalOpen(true);
   };
   
   const handlePurchase = async (creditAmount: number) => {
     if (!session) {
-        setError("You must be logged in to purchase credits.");
+        showToast("You must be logged in to purchase credits.", 'error');
         return;
     }
     
-    setError(null);
     setIsPurchaseModalOpen(false);
     setLoadingMessage(`Preparing your secure checkout for ${creditAmount} credits...`);
     setIsLoading(true);
@@ -263,7 +280,7 @@ const App: React.FC = () => {
 
     } catch (error) {
         console.error("Failed to redirect to checkout:", error);
-        setError(getFriendlyErrorMessage(error, "Could not redirect to the payment page"));
+        showToast(getFriendlyErrorMessage(error, "Could not redirect to the payment page"));
         setIsLoading(false);
     }
   };
@@ -276,7 +293,6 @@ const App: React.FC = () => {
     }]);
     setCurrentOutfitIndex(0);
     setCurrentPoseIndex(0);
-    setError(null);
   };
 
   const handleNewModel = () => {
@@ -285,7 +301,6 @@ const App: React.FC = () => {
     setCurrentOutfitIndex(0);
     setIsLoading(false);
     setLoadingMessage('');
-    setError(null);
     setCurrentPoseIndex(0);
   }
 
@@ -305,10 +320,11 @@ const App: React.FC = () => {
     setIsLoading(false);
     
     if (error) {
-        setError("Couldn't save your model.");
+        showToast("Couldn't save your model.", 'error');
     } else if (data) {
         const newModel: SavedModel = { id: data.id, name: data.name, imageUrl: data.image_url };
         setSavedModels(prev => [newModel, ...prev]);
+        showToast('Model saved successfully!', 'success');
         handleModelFinalized(imageUrl);
     }
   };
@@ -322,8 +338,67 @@ const App: React.FC = () => {
         .delete()
         .eq('id', id);
     if (error) {
-        setError("Couldn't delete the model.");
+        showToast("Couldn't delete the model.", 'error');
         setSavedModels(originalModels); // Revert on error
+    } else {
+        showToast('Model deleted.', 'success');
+    }
+  };
+
+  const handleSaveLook = async () => {
+    if (!session || !displayImageUrl || outfitHistory.length <= 1) {
+        showToast("Add at least one garment to save a look.", 'info');
+        return;
+    }
+
+    const lookName = prompt("Give your look a name:", `My Look ${savedOutfits.length + 1}`);
+    if (!lookName) return;
+
+    if (credits <= 0) {
+        showToast("You are out of credits to save a look.", 'error');
+        return;
+    }
+
+    setIsLoading(true);
+    setLoadingMessage("Saving your look...");
+    try {
+        const newLookData = {
+            user_id: session.user.id,
+            name: lookName,
+            thumbnail_url: displayImageUrl,
+            outfit_data: outfitHistory,
+        };
+        const { data, error } = await supabase.from('saved_outfits').insert(newLookData).select().single();
+        if (error) throw error;
+        
+        const newLook: SavedOutfit = { id: data.id, name: data.name, thumbnailUrl: data.thumbnail_url, outfitData: data.outfit_data };
+        setSavedOutfits(prev => [newLook, ...prev]);
+        await handleUseCredit();
+        showToast("Look saved successfully!", 'success');
+    } catch (err) {
+        showToast(getFriendlyErrorMessage(err, 'Failed to save look'), 'error');
+    } finally {
+        setIsLoading(false);
+    }
+  };
+
+  const handleLoadLook = (look: SavedOutfit) => {
+    setOutfitHistory(look.outfitData);
+    setCurrentOutfitIndex(look.outfitData.length - 1);
+    setCurrentPoseIndex(0);
+    showToast(`Loaded look: ${look.name}`, 'info');
+  };
+
+  const handleDeleteLook = async (id: string) => {
+    if (!session) return;
+    const originalOutfits = savedOutfits;
+    setSavedOutfits(prev => prev.filter(o => o.id !== id)); // Optimistic
+    const { error } = await supabase.from('saved_outfits').delete().eq('id', id);
+    if (error) {
+        showToast("Couldn't delete the look.", 'error');
+        setSavedOutfits(originalOutfits);
+    } else {
+        showToast('Look deleted.', 'success');
     }
   };
   
@@ -345,7 +420,7 @@ const App: React.FC = () => {
     if (!baseImageUrl || isLoading) return;
 
     if (credits <= 0) {
-      setError("You are out of credits to add a new garment.");
+      showToast("You are out of credits to add a new garment.", 'error');
       return;
     }
 
@@ -356,7 +431,6 @@ const App: React.FC = () => {
         return;
     }
 
-    setError(null);
     setIsLoading(true);
     setLoadingMessage(`Styling you in: ${garmentInfo.name}...`);
 
@@ -381,7 +455,7 @@ const App: React.FC = () => {
         return [...prev, garmentInfo];
       });
     } catch (err) {
-      setError(getFriendlyErrorMessage(String(err), 'Failed to apply garment'));
+      showToast(getFriendlyErrorMessage(String(err), 'Failed to apply garment'));
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
@@ -414,14 +488,13 @@ const App: React.FC = () => {
     }
 
     if (credits <= 0) {
-      setError("You are out of credits to generate a new pose.");
+      showToast("You are out of credits to generate a new pose.", 'error');
       return;
     }
 
     const baseImageForPoseChange = Object.values(currentLayer.poseImages)[0];
     if (!baseImageForPoseChange) return;
 
-    setError(null);
     setIsLoading(true);
     setLoadingMessage(`Changing your pose...`);
     
@@ -438,7 +511,7 @@ const App: React.FC = () => {
         return newHistory;
       });
     } catch (err) {
-      setError(getFriendlyErrorMessage(String(err), 'Failed to change pose'));
+      showToast(getFriendlyErrorMessage(String(err), 'Failed to change pose'));
       setCurrentPoseIndex(prevPoseIndex);
     } finally {
       setIsLoading(false);
@@ -450,11 +523,10 @@ const App: React.FC = () => {
     if (!displayImageUrl || isLoading) return;
 
     if (credits <= 0) {
-      setError("You are out of credits for this action.");
+      showToast("You are out of credits for this action.", 'error');
       return;
     }
 
-    setError(null);
     setIsLoading(true);
     setLoadingMessage(loadingMsg);
 
@@ -469,7 +541,7 @@ const App: React.FC = () => {
         return newHistory;
       });
     } catch (err) {
-      setError(getFriendlyErrorMessage(String(err), 'Failed to apply changes'));
+      showToast(getFriendlyErrorMessage(String(err), 'Failed to apply changes'));
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
@@ -482,7 +554,6 @@ const App: React.FC = () => {
     if (mode === 'remix') {
         handleImageEdit(prompt, 'Remixing your style...');
     } else { // mixtape
-        setError(null);
         setIsLoading(true);
         setLoadingMessage(`Curating a "${prompt}" look...`);
         
@@ -505,7 +576,7 @@ const App: React.FC = () => {
                 }
             }
         } catch (err) {
-          setError(getFriendlyErrorMessage(String(err), 'Style Mixtape failed'));
+          showToast(getFriendlyErrorMessage(String(err), 'Style Mixtape failed'));
         } finally {
           setIsLoading(false);
           setLoadingMessage('');
@@ -513,6 +584,10 @@ const App: React.FC = () => {
     }
   }, [wardrobe, isLoading, handleGarmentSelect, handleImageEdit]);
 
+  const handleDeleteWardrobeItem = (id: string) => {
+    setWardrobe(prev => prev.filter(item => item.id !== id));
+    showToast("Item removed from your wardrobe.", 'success');
+  };
 
   const handleDownload = () => {
     if (!displayImageUrl) return;
@@ -560,6 +635,9 @@ const App: React.FC = () => {
 
   return (
     <div className="font-sora bg-stone-50 text-stone-900 dark:bg-stone-950 dark:text-stone-200">
+      <AnimatePresence>
+        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      </AnimatePresence>
       <AnimatePresence mode="wait">
         {appState === 'landing' ? (
           <motion.div
@@ -585,6 +663,7 @@ const App: React.FC = () => {
               onSaveModel={handleSaveModel}
               onDeleteModel={handleDeleteModel}
               savedModels={savedModels}
+              modelsLoading={modelsLoading}
               credits={credits} 
               onUseCredit={handleUseCredit}
               onAddCredits={handleAddCredits}
@@ -603,14 +682,14 @@ const App: React.FC = () => {
               <div className="w-full h-full flex-grow flex items-center justify-center bg-stone-100 dark:bg-stone-900 pb-16 relative">
                  <div className="absolute top-4 right-4 z-30 flex flex-col items-end gap-3">
                    <div className="flex items-center gap-3">
-                    <ThemeSwitcher theme={theme} setTheme={setTheme} />
-                     <button
-                        onClick={handleSignOut}
-                        className="flex items-center justify-center text-center w-auto bg-stone-50/60 dark:bg-stone-950/60 border border-stone-300/80 dark:border-stone-700/80 text-stone-700 dark:text-stone-300 font-semibold p-2 rounded-full transition-all duration-200 ease-in-out hover:bg-stone-50 dark:hover:bg-stone-900 hover:border-stone-400 dark:hover:border-stone-600 active:scale-95 text-sm backdrop-blur-sm"
-                        aria-label="Sign Out"
-                      >
-                        <LogOutIcon className="w-5 h-5" />
-                      </button>
+                    <ProfileMenu 
+                      session={session}
+                      credits={credits}
+                      theme={theme}
+                      setTheme={setTheme}
+                      onSignOut={handleSignOut}
+                      onAddCredits={handleAddCredits}
+                    />
                    </div>
                    <button
                       onClick={handleDownload}
@@ -653,49 +732,55 @@ const App: React.FC = () => {
                   {/* Scrollable Content Area */}
                   <div className="flex-grow overflow-y-auto">
                     <div className="p-4 md:p-6 pb-20 flex flex-col gap-8">
-                        {/* Compact Credits Header */}
-                        <div className="flex items-center justify-between gap-2 p-3 bg-stone-100 dark:bg-stone-900/80 rounded-lg border border-stone-200/60 dark:border-stone-800/60">
-                          {credits > 0 ? (
-                            <>
-                              <p className="text-sm font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider">Credits</p>
-                              <p className="text-2xl font-bold font-sora text-stone-800 dark:text-stone-200">{credits}</p>
-                            </>
-                          ) : (
-                             <div className="w-full flex items-center justify-between">
-                                <p className="font-bold text-red-600 dark:text-red-500">Out of credits!</p>
-                                <button 
-                                    onClick={handleAddCredits}
-                                    className="flex items-center justify-center text-center bg-stone-800 text-white font-semibold py-2 px-3 rounded-md transition-colors duration-200 ease-in-out hover:bg-stone-600 active:scale-95 text-sm"
-                                >
-                                    <SparklesIcon className="w-4 h-4 mr-2" />
-                                    Get More
-                                </button>
-                             </div>
-                          )}
-                        </div>
-
-                        {error && (
-                        <div className="bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 p-4 rounded-lg" role="alert">
-                            <p className="font-bold">Error</p>
-                            <p className="text-sm">{error}</p>
-                        </div>
+                        {credits <= 1 && (
+                         <div className="w-full flex items-center justify-between p-3 bg-red-500/10 rounded-lg border border-red-500/20 text-red-600 dark:text-red-500">
+                            <p className="font-bold">Credits are low!</p>
+                            <button 
+                                onClick={handleAddCredits}
+                                className="flex items-center justify-center text-center bg-stone-800 text-white font-semibold py-2 px-3 rounded-md transition-colors duration-200 ease-in-out hover:bg-stone-600 active:scale-95 text-sm"
+                            >
+                                <SparklesIcon className="w-4 h-4 mr-2" />
+                                Get More
+                            </button>
+                         </div>
                         )}
+
                         <ProfessionalShotsPanel onSelect={handleImageEdit} isLoading={isLoading} credits={credits} />
                         <AspectRatioSelector onSelect={handleImageEdit} isLoading={isLoading} credits={credits} />
                         <PromptEditor onGenerate={handleCreativeAI} isLoading={isLoading} credits={credits} />
                         <BackgroundSelector onSelect={handleImageEdit} isLoading={isLoading} credits={credits} />
-                        <OutfitStack 
-                        outfitHistory={outfitHistory}
-                        currentOutfitIndex={currentOutfitIndex}
-                        onRemoveLastGarment={handleRemoveLastGarment}
-                        onRevertToOutfit={handleRevertToOutfit}
+                        
+                        <div className="relative">
+                          <button 
+                            onClick={handleSaveLook}
+                            disabled={isLoading || outfitHistory.length <= 1}
+                            className="absolute -top-10 right-0 flex items-center gap-2 text-sm font-semibold text-stone-600 dark:text-stone-400 hover:text-fuchsia-500 dark:hover:text-fuchsia-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <BookmarkIcon className="w-4 h-4" />
+                            Save Look
+                          </button>
+                          <OutfitStack 
+                            outfitHistory={outfitHistory}
+                            currentOutfitIndex={currentOutfitIndex}
+                            onRemoveLastGarment={handleRemoveLastGarment}
+                            onRevertToOutfit={handleRevertToOutfit}
+                          />
+                        </div>
+
+                        <SavedLooksPanel
+                            savedOutfits={savedOutfits}
+                            onLoadOutfit={handleLoadLook}
+                            onDeleteOutfit={handleDeleteLook}
+                            isLoading={isLoading}
                         />
+
                         <WardrobePanel
-                        onGarmentSelect={handleGarmentSelect}
-                        activeGarmentIds={activeGarmentIds}
-                        isLoading={isLoading}
-                        wardrobe={wardrobe}
-                        credits={credits}
+                          onGarmentSelect={handleGarmentSelect}
+                          activeGarmentIds={activeGarmentIds}
+                          isLoading={isLoading}
+                          wardrobe={wardrobe}
+                          credits={credits}
+                          onDeleteItem={handleDeleteWardrobeItem}
                         />
                     </div>
                   </div>

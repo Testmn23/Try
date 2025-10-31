@@ -4,6 +4,8 @@
 */
 
 import { GoogleGenAI, GenerateContentResponse, Modality, Type } from "@google/genai";
+import { createClient } from '@supabase/supabase-js';
+import { v4 as uuidv4 } from 'uuid';
 
 // --- CONFIGURATION ---
 // Determines which backend to use. Defaults to true.
@@ -16,9 +18,24 @@ const GOOGLE_PRO_MODEL = 'gemini-2.5-pro';
 const OPENROUTER_IMAGE_MODEL = 'google/gemini-2.5-flash-image-preview';
 const OPENROUTER_PRO_MODEL = 'google/gemini-2.5-pro';
 
+// --- Helper Functions ---
+const dataUrlToBlob = (dataUrl: string): Blob => {
+    const arr = dataUrl.split(',');
+    if (arr.length < 2) throw new Error("Invalid data URL");
+    const mimeMatch = arr[0].match(/:(.*?);/);
+    if (!mimeMatch || !mimeMatch[1]) throw new Error("Could not parse MIME type from data URL");
+    
+    const mime = mimeMatch[1];
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while(n--){
+        u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], {type:mime});
+}
 
 // --- Vercel Edge Function Handler ---
-
 export const config = {
   runtime: 'edge',
 };
@@ -46,6 +63,46 @@ export default async function handler(req: Request) {
     return new Response(JSON.stringify({ error: `Server error: ${errorMessage}` }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 }
+
+// =================================================================
+// --- UNIVERSAL IMAGE UPLOAD (to Supabase Storage) ---
+// =================================================================
+let _supabaseAdmin;
+const getSupabaseAdmin = () => {
+    if (!_supabaseAdmin) {
+        if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+            throw new Error("Supabase Admin credentials are not set.");
+        }
+        _supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+    }
+    return _supabaseAdmin;
+};
+
+const uploadImageAndGetUrl = async (base64DataUrl: string, userId: string): Promise<string> => {
+    const supabase = getSupabaseAdmin();
+    const imageBlob = dataUrlToBlob(base64DataUrl);
+    const fileExt = imageBlob.type.split('/')[1] || 'png';
+    const filePath = `${userId}/${uuidv4()}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+        .from('generated_images')
+        .upload(filePath, imageBlob);
+
+    if (uploadError) {
+        throw new Error(`Failed to upload image to storage: ${uploadError.message}`);
+    }
+
+    const { data } = supabase.storage
+        .from('generated_images')
+        .getPublicUrl(filePath);
+
+    if (!data.publicUrl) {
+        throw new Error("Could not get public URL for the uploaded image.");
+    }
+    
+    return data.publicUrl;
+};
+
 
 // =================================================================
 // --- GOOGLE AI SDK IMPLEMENTATION (when USE_OPENROUTER is false) ---
@@ -98,6 +155,9 @@ async function handleGoogleAIRequest(action: string, payload: any) {
     const ai = getAiClient();
     let response: GenerateContentResponse;
 
+    const { userId } = payload; // Assuming userId is passed in all payloads for storage
+    if (!userId) throw new Error("User ID is required for image processing.");
+
     switch (action) {
         case 'generateModelImage': {
             const { userImageDataUrl } = payload;
@@ -108,7 +168,8 @@ async function handleGoogleAIRequest(action: string, payload: any) {
                 contents: { parts: [userImagePart, { text: prompt }] },
                 config: { responseModalities: [Modality.IMAGE] },
             });
-            return { imageUrl: handleGoogleApiResponse(response) };
+            const imageUrl = await uploadImageAndGetUrl(handleGoogleApiResponse(response), userId);
+            return { imageUrl };
         }
 
         case 'generateVirtualTryOnImage': {
@@ -121,7 +182,8 @@ async function handleGoogleAIRequest(action: string, payload: any) {
                 contents: { parts: [modelImagePart, garmentImagePart, { text: prompt }] },
                 config: { responseModalities: [Modality.IMAGE] },
             });
-            return { imageUrl: handleGoogleApiResponse(response) };
+            const imageUrl = await uploadImageAndGetUrl(handleGoogleApiResponse(response), userId);
+            return { imageUrl };
         }
 
         case 'generatePoseVariation': {
@@ -133,7 +195,8 @@ async function handleGoogleAIRequest(action: string, payload: any) {
                 contents: { parts: [tryOnImagePart, { text: prompt }] },
                 config: { responseModalities: [Modality.IMAGE] },
             });
-            return { imageUrl: handleGoogleApiResponse(response) };
+            const imageUrl = await uploadImageAndGetUrl(handleGoogleApiResponse(response), userId);
+            return { imageUrl };
         }
 
         case 'generateImageVariation': {
@@ -145,7 +208,8 @@ async function handleGoogleAIRequest(action: string, payload: any) {
                 contents: { parts: [baseImagePart, { text: fullPrompt }] },
                 config: { responseModalities: [Modality.IMAGE] },
             });
-            return { imageUrl: handleGoogleApiResponse(response) };
+            const imageUrl = await uploadImageAndGetUrl(handleGoogleApiResponse(response), userId);
+            return { imageUrl };
         }
 
         case 'suggestOutfit': {
@@ -238,13 +302,19 @@ async function callOpenRouter(model: string, messages: any[], req: Request, isJs
 
 async function handleOpenRouterRequest(action: string, payload: any, req: Request) {
 
+    const { userId } = payload;
+    if (action !== 'suggestOutfit' && !userId) {
+        throw new Error("User ID is required for image processing.");
+    }
+
     switch (action) {
         case 'generateModelImage': {
             const { userImageDataUrl } = payload;
             const prompt = "You are an expert fashion photographer AI. Transform the person in this image into a full-body fashion model photo suitable for an e-commerce website. The background must be a clean, neutral studio backdrop (light gray, #f0f0f0). The person should have a neutral, professional model expression. Preserve the person's identity, unique features, and body type, but place them in a standard, relaxed standing model pose. The final image must be photorealistic. Return ONLY the final image.";
             const messages = [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: userImageDataUrl } }] }];
             const data = await callOpenRouter(OPENROUTER_IMAGE_MODEL, messages, req);
-            return { imageUrl: handleOpenRouterImageResponse(data) };
+            const imageUrl = await uploadImageAndGetUrl(handleOpenRouterImageResponse(data), userId);
+            return { imageUrl };
         }
 
         case 'generateVirtualTryOnImage': {
@@ -252,7 +322,8 @@ async function handleOpenRouterRequest(action: string, payload: any, req: Reques
             const prompt = garmentInfo.category === 'clothing' ? /* clothing prompt */ `You are an expert virtual try-on AI. You will be given a 'model image' and a 'garment image'. Your task is to create a new photorealistic image where the person from the 'model image' is wearing the clothing from the 'garment image'.\n\n**Crucial Rules:**\n1.  **Complete Garment Replacement:** You MUST completely REMOVE and REPLACE the clothing item worn by the person in the 'model image' with the new garment. No part of the original clothing (e.g., collars, sleeves, patterns) should be visible in the final image.\n2.  **Preserve the Model:** The person's face, hair, body shape, and pose from the 'model image' MUST remain unchanged.\n3.  **Preserve the Background:** The entire background from the 'model image' MUST be preserved perfectly.\n4.  **Apply the Garment:** Realistically fit the new garment onto the person. It should adapt to their pose with natural folds, shadows, and lighting consistent with the original scene.\n5.  **Output:** Return ONLY the final, edited image. Do not include any text.` : /* accessory prompt */ `You are an expert virtual try-on AI for accessories. You will be given a 'model image' and an 'accessory image'. Your task is to create a new photorealistic image where the person from the 'model image' is now wearing the item from the 'accessory image'.\n\n**Crucial Rules:**\n1.  **ADD the Accessory:** Realistically place the accessory on the person. It should integrate naturally with their existing outfit and pose (e.g., a necklace should go around their neck, sunglasses on their face).\n2.  **Do NOT Replace Clothing:** The person's existing clothing MUST remain unchanged.\n3.  **Preserve the Model & Background:** The person's face, hair, body shape, pose, and the background from the 'model image' MUST be perfectly preserved.\n4.  **Output:** Return ONLY the final, edited image. Do not include any text.`;
             const messages = [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: modelImageUrl } }, { type: "image_url", image_url: { url: garmentImageDataUrl } }] }];
             const data = await callOpenRouter(OPENROUTER_IMAGE_MODEL, messages, req);
-            return { imageUrl: handleOpenRouterImageResponse(data) };
+            const imageUrl = await uploadImageAndGetUrl(handleOpenRouterImageResponse(data), userId);
+            return { imageUrl };
         }
 
         case 'generatePoseVariation': {
@@ -260,7 +331,8 @@ async function handleOpenRouterRequest(action: string, payload: any, req: Reques
             const prompt = `You are an expert fashion photographer AI. Take this image and regenerate it from a different perspective. The person, clothing, and background style must remain identical. The new perspective should be: "${poseInstruction}". Return ONLY the final image.`;
             const messages = [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: tryOnImageUrl } }] }];
             const data = await callOpenRouter(OPENROUTER_IMAGE_MODEL, messages, req);
-            return { imageUrl: handleOpenRouterImageResponse(data) };
+            const imageUrl = await uploadImageAndGetUrl(handleOpenRouterImageResponse(data), userId);
+            return { imageUrl };
         }
 
         case 'generateImageVariation': {
@@ -268,7 +340,8 @@ async function handleOpenRouterRequest(action: string, payload: any, req: Reques
             const fullPrompt = `You are an expert photo editing AI. You will be given an image and a text instruction. Your task is to edit the image based on the instruction while maintaining photorealism and the core identity of the subject.\nInstruction: "${prompt}".\nKey rules:\n1.  Apply the change specified in the instruction accurately.\n2.  Preserve all other aspects of the image (person's identity, pose, main outfit unless specified) as closely as possible.\n3.  Ensure the final image is photorealistic and high quality.\n4.  Return ONLY the final, edited image. Do not include any text or commentary.`;
             const messages = [{ role: "user", content: [{ type: "text", text: fullPrompt }, { type: "image_url", image_url: { url: baseImageUrl } }] }];
             const data = await callOpenRouter(OPENROUTER_IMAGE_MODEL, messages, req);
-            return { imageUrl: handleOpenRouterImageResponse(data) };
+            const imageUrl = await uploadImageAndGetUrl(handleOpenRouterImageResponse(data), userId);
+            return { imageUrl };
         }
 
         case 'suggestOutfit': {

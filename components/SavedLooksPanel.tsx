@@ -25,11 +25,12 @@ const SavedLooksPanel: React.FC<SavedLooksPanelProps> = ({ savedOutfits, onLoadO
         {savedOutfits.map((outfit) => (
           <div key={outfit.id} className="relative group aspect-square">
             <img
-              src={outfit.thumbnail}
-              alt="Saved outfit"
+              src={outfit.thumbnailUrl}
+              alt={outfit.name}
               className="w-full h-full object-cover rounded-lg border border-stone-200 dark:border-stone-800"
             />
-            <div className="absolute inset-0 bg-stone-950/70 rounded-lg flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <div className="absolute inset-0 bg-stone-950/70 rounded-lg flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 p-2">
+               <p className="text-white font-bold text-xs text-center truncate w-full mb-2">{outfit.name}</p>
               <button
                 onClick={() => onLoadOutfit(outfit)}
                 disabled={isLoading}

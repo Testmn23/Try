@@ -1,13 +1,3 @@
-# Manual SQL for Supabase Setup
-
-Run these SQL commands in your Supabase SQL Editor to set up the necessary tables and policies for the app.
-
-## 1. Profiles Table
-
-This table stores user-specific data, including the number of credits.
-The `credits` column is set to a `default` of 10, so every new user automatically starts with 10 credits.
-
-```sql
 -- Create a table for public user profiles
 create table profiles (
   id uuid references auth.users not null primary key,
@@ -27,13 +17,6 @@ create policy "Users can insert their own profile." on profiles
 
 create policy "Users can update own profile." on profiles
   for update using (auth.uid() = id);
-```
-
-## 2. Function to Create Profile on Signup
-
-This function automatically creates a profile entry when a new user signs up.
-
-```sql
 -- Creates a profile for a new user
 create function public.handle_new_user()
 returns trigger as $$
@@ -50,13 +33,6 @@ $$ language plpgsql security definer;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
-```
-
-## 3. Saved Models Table
-
-This table stores the models created by users.
-
-```sql
 -- Create saved_models table
 create table saved_models (
   id uuid default gen_random_uuid() primary key,
@@ -78,14 +54,6 @@ create policy "Users can insert their own saved models." on saved_models
 
 create policy "Users can delete their own saved models." on saved_models
   for delete using (auth.uid() = user_id);
-
-```
-
-## 4. Function to Add Credits
-
-This function allows securely adding credits to a user's profile. It's called from the webhook to prevent race conditions.
-
-```sql
 -- Creates a function to add credits to a user profile
 create function public.add_credits(p_user_id uuid, p_amount integer)
 returns void as $$
@@ -95,4 +63,41 @@ begin
   where id = p_user_id;
 end;
 $$ language plpgsql security definer;
-```
+-- Create saved_outfits table
+create table saved_outfits (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users not null,
+  name text not null,
+  thumbnail_url text not null,
+  outfit_data jsonb not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- Set up Row Level Security (RLS) for saved_outfits
+alter table saved_outfits
+  enable row level security;
+
+create policy "Users can view their own saved outfits." on saved_outfits
+  for select using (auth.uid() = user_id);
+
+create policy "Users can insert their own saved outfits." on saved_outfits
+  for insert with check (auth.uid() = user_id);
+
+create policy "Users can delete their own saved outfits." on saved_outfits
+  for delete using (auth.uid() = user_id);
+-- Create a bucket for generated images
+insert into storage.buckets (id, name, public)
+values ('generated_images', 'generated_images', true);
+
+-- Set up RLS policies for the generated_images bucket
+create policy "Users can view their own images."
+  on storage.objects for select
+  using ( auth.uid() = (storage.foldername(name))[1]::uuid );
+
+create policy "Users can upload images to their own folder."
+  on storage.objects for insert
+  with check ( auth.uid() = (storage.foldername(name))[1]::uuid );
+
+create policy "Users can delete their own images."
+  on storage.objects for delete
+  using ( auth.uid() = (storage.foldername(name))[1]::uuid );

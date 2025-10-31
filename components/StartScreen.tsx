@@ -5,18 +5,20 @@
 
 import React, { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { UploadCloudIcon, SaveIcon, Trash2Icon, SparklesIcon } from './icons';
+import { UploadCloudIcon, SaveIcon, Trash2Icon, SparklesIcon, UserPlusIcon } from './icons';
 import { Compare } from './ui/compare';
 import { generateModelImage } from '../services/geminiService';
 import Spinner from './Spinner';
 import { getFriendlyErrorMessage } from '../lib/utils';
 import { SavedModel } from '../types';
+import SkeletonCard from './SkeletonCard';
 
 interface StartScreenProps {
   onModelFinalized: (modelUrl: string) => void;
   onSaveModel: (name: string, imageUrl: string) => void;
   onDeleteModel: (id: string) => void;
   savedModels: SavedModel[];
+  modelsLoading: boolean;
   credits: number;
   onUseCredit: () => void;
   onAddCredits: () => void;
@@ -27,6 +29,7 @@ const StartScreen: React.FC<StartScreenProps> = ({
   onSaveModel,
   onDeleteModel,
   savedModels,
+  modelsLoading,
   credits, 
   onUseCredit,
   onAddCredits,
@@ -140,7 +143,11 @@ const StartScreen: React.FC<StartScreenProps> = ({
           </div>
           <div className="w-full lg:w-1/2 flex flex-col items-center justify-center p-6 rounded-2xl bg-stone-100 dark:bg-stone-900/50 border border-stone-200 dark:border-stone-800">
             <h2 className="text-2xl font-playfair font-bold text-stone-800 dark:text-stone-200 mb-4">Saved Models</h2>
-            {savedModels.length > 0 ? (
+            {modelsLoading ? (
+                <div className="w-full grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {[...Array(3)].map((_, i) => <SkeletonCard key={i} />)}
+                </div>
+            ) : savedModels.length > 0 ? (
                 <div className="w-full grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {savedModels.map(model => (
                     <div key={model.id} className="relative group aspect-square">
@@ -158,7 +165,11 @@ const StartScreen: React.FC<StartScreenProps> = ({
                   ))}
                 </div>
             ) : (
-                <p className="text-stone-500 dark:text-stone-400 text-sm">Your saved models will appear here.</p>
+                <div className="text-center text-stone-500 dark:text-stone-400 text-sm py-8">
+                    <UserPlusIcon className="w-10 h-10 mx-auto mb-2 text-stone-400 dark:text-stone-600" />
+                    <p className="font-semibold">No models yet!</p>
+                    <p>Create your first digital model to get started.</p>
+                </div>
             )}
           </div>
         </motion.div>

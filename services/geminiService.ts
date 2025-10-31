@@ -4,6 +4,7 @@
 */
 
 import { WardrobeItem } from "../types";
+import { supabase } from "../lib/supabaseClient";
 
 const fileToDataUrl = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -15,12 +16,20 @@ const fileToDataUrl = (file: File): Promise<string> => {
 };
 
 async function callApi(action: string, payload: any) {
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id;
+
+    // For image generation, userId is crucial for storage path
+    if (action !== 'suggestOutfit' && !userId) {
+        throw new Error("You must be logged in to perform this action.");
+    }
+    
     const response = await fetch('/api/gemini', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ action, payload }),
+        body: JSON.stringify({ action, payload: { ...payload, userId } }),
     });
 
     const result = await response.json();

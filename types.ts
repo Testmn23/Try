@@ -18,8 +18,9 @@ export interface OutfitLayer {
 // Fix: Add the missing 'SavedOutfit' interface definition.
 export interface SavedOutfit {
   id: string;
-  thumbnail: string;
-  layers: OutfitLayer[];
+  name: string;
+  thumbnailUrl: string;
+  outfitData: OutfitLayer[];
 }
 
 export interface SavedModel {
@@ -42,4 +43,9 @@ export interface DodoWebhookPayload {
       // ... other properties
     }
   }
+}
+
+export interface ToastMessage {
+    message: string;
+    type: 'success' | 'error' | 'info';
 }
