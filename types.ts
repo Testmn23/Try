@@ -29,3 +29,17 @@ export interface SavedModel {
 }
 
 export type Theme = 'light' | 'dark' | 'system';
+
+export interface DodoWebhookPayload {
+  type: string;
+  data: {
+    object: {
+      id: string;
+      metadata: {
+        userId: string;
+        creditAmount: string; // metadata values are often strings
+      };
+      // ... other properties
+    }
+  }
+}

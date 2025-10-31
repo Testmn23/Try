@@ -7,7 +7,6 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabaseClient';
-import { DodoPayments } from 'dodopayments-checkout';
 
 
 import StartScreen from './StartScreen';
@@ -30,6 +29,8 @@ import LegalModal from './LegalModal';
 import ProfessionalShotsPanel from './ProfessionalShotsPanel';
 import Auth from './Auth';
 import PurchaseCreditsModal from './PurchaseCreditsModal';
+import PaymentSuccessPage from './PaymentSuccessPage';
+import PaymentFailurePage from './PaymentFailurePage';
 
 
 const POSE_INSTRUCTIONS = [
@@ -40,12 +41,6 @@ const POSE_INSTRUCTIONS = [
   "Walking towards camera",
   "Leaning against a wall",
 ];
-
-// A basic type definition for Dodo Payment events since the library doesn't export it.
-interface CheckoutEvent {
-  event_type: "checkout.opened" | "checkout.payment_page_opened" | "checkout.customer_details_submitted" | "checkout.closed" | "checkout.redirect" | "checkout.error";
-  data?: any;
-}
 
 
 const useMediaQuery = (query: string): boolean => {
@@ -89,10 +84,13 @@ const App: React.FC = () => {
   const [savedModels, setSavedModels] = useState<SavedModel[]>([]);
   const [legalModalContent, setLegalModalContent] = useState<string | null>(null);
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
+  const [paymentStatusView, setPaymentStatusView] = useState<'success' | 'failure' | null>(null);
+
 
   const fetchProfile = useCallback(async () => {
       if (!session) return;
       try {
+          setIsLoading(true);
           const { data, error } = await supabase
               .from('profiles')
               .select('credits')
@@ -105,8 +103,25 @@ const App: React.FC = () => {
       } catch (error) {
           console.error('Error fetching profile', error);
           setError('Could not load your profile.');
+      } finally {
+        setIsLoading(false);
       }
   }, [session]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get('status');
+    const paymentId = params.get('payment_id');
+
+    if (paymentId && status) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        if (status === 'succeeded') {
+            setPaymentStatusView('success');
+        } else {
+            setPaymentStatusView('failure');
+        }
+    }
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -119,22 +134,6 @@ const App: React.FC = () => {
 
     return () => subscription.unsubscribe();
   }, []);
-
-  useEffect(() => {
-    DodoPayments.Initialize({
-        mode: "test",
-        onEvent: (event: CheckoutEvent) => {
-            console.log("Dodo Event:", event);
-            if (event.event_type === 'checkout.closed') {
-                // In a real app, a webhook is the reliable way to update credits.
-                // This is a simulation for demonstration purposes.
-                console.log('Checkout closed, refetching profile to check for new credits.');
-                fetchProfile();
-                setIsPurchaseModalOpen(false); // Close modal when Dodo checkout closes
-            }
-        },
-    });
-  }, [fetchProfile]);
 
   useEffect(() => {
     if (session) {
@@ -238,26 +237,35 @@ const App: React.FC = () => {
     
     setError(null);
     setIsPurchaseModalOpen(false);
-    setLoadingMessage(`Redirecting to payment for ${creditAmount} credits...`);
+    setLoadingMessage(`Preparing your secure checkout for ${creditAmount} credits...`);
     setIsLoading(true);
 
-    // In a real app, this is where you'd call your backend to create a checkout session.
-    // The backend would use Dodo's server-side SDK to generate a unique checkoutUrl.
-    // It would also associate the session with the user ID and credit amount.
-    
-    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate API latency
-
-    // This is a placeholder URL. In a real app, this should come from your server.
-    const checkoutUrl = "https://checkout.dodopayments.com/session/cks_placeholder_for_demo";
-
     try {
-        await DodoPayments.Checkout.open({ checkoutUrl });
+        const response = await fetch('/api/create-checkout-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                creditAmount, 
+                user: { 
+                    id: session.user.id, 
+                    email: session.user.email 
+                } 
+            })
+        });
+
+        if (!response.ok) {
+            const { error } = await response.json();
+            throw new Error(error || 'Failed to create checkout session.');
+        }
+
+        const { checkoutUrl } = await response.json();
+        window.location.href = checkoutUrl;
+
     } catch (error) {
-        console.error("Failed to open checkout:", error);
-        setError(getFriendlyErrorMessage(error, "Could not open the payment window"));
+        console.error("Failed to redirect to checkout:", error);
+        setError(getFriendlyErrorMessage(error, "Could not redirect to the payment page"));
+        setIsLoading(false);
     }
-    // Note: We don't setIsLoading(false) here because the Dodo overlay is now active.
-    // The 'checkout.closed' event will handle UI state restoration.
   };
 
   const handleModelFinalized = (url: string) => {
@@ -518,6 +526,14 @@ const App: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  const handleTryAgainPurchase = () => {
+    setPaymentStatusView(null);
+    // Timeout to allow the view to change before the modal opens
+    setTimeout(() => {
+        handleAddCredits();
+    }, 100); 
+  }
+
   const customEase: [number, number, number, number] = [0.22, 1, 0.36, 1];
   const viewVariants = {
     initial: { opacity: 0, scale: 0.98 },
@@ -525,6 +541,17 @@ const App: React.FC = () => {
     exit: { opacity: 0, scale: 0.98, transition: { duration: 0.3, ease: customEase } },
   };
   
+  if (paymentStatusView === 'success') {
+    return <PaymentSuccessPage onContinue={() => {
+        setPaymentStatusView(null);
+        fetchProfile();
+    }} />;
+  }
+
+  if (paymentStatusView === 'failure') {
+      return <PaymentFailurePage onContinue={() => setPaymentStatusView(null)} onTryAgain={handleTryAgainPurchase} />;
+  }
+
   if (!session) {
     return (
       <div className="font-sora bg-stone-50 text-stone-900 dark:bg-stone-950 dark:text-stone-200">
@@ -700,7 +727,7 @@ const App: React.FC = () => {
         isOpen={isPurchaseModalOpen}
         onClose={() => setIsPurchaseModalOpen(false)}
         onPurchase={handlePurchase}
-        isLoading={isLoading && loadingMessage.includes('Redirecting to payment')}
+        isLoading={isLoading && loadingMessage.includes('Preparing your secure checkout')}
       />
     </div>
   );

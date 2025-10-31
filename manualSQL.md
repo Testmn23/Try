@@ -80,3 +80,19 @@ create policy "Users can delete their own saved models." on saved_models
   for delete using (auth.uid() = user_id);
 
 ```
+
+## 4. Function to Add Credits
+
+This function allows securely adding credits to a user's profile. It's called from the webhook to prevent race conditions.
+
+```sql
+-- Creates a function to add credits to a user profile
+create function public.add_credits(p_user_id uuid, p_amount integer)
+returns void as $$
+begin
+  update public.profiles
+  set credits = credits + p_amount
+  where id = p_user_id;
+end;
+$$ language plpgsql security definer;
+```
