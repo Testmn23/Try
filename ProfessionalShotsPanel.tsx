@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState } from 'react';
-import { IdCardIcon, PortraitIcon } from './icons';
+import { IdCardIcon, PortraitIcon } from './components/icons';
 
 interface ProfessionalShotsPanelProps {
   onSelect: (prompt: string, loadingMessage: string) => void;

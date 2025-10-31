@@ -26,7 +26,7 @@ import PromptEditor from './PromptEditor';
 import BackgroundSelector from './BackgroundSelector';
 import AspectRatioSelector from './AspectRatioSelector';
 import LegalModal from './LegalModal';
-import ProfessionalShotsPanel from './ProfessionalShotsPanel';
+import ProfessionalShotsPanel from '../ProfessionalShotsPanel';
 import Auth from './Auth';
 import PurchaseCreditsModal from './PurchaseCreditsModal';
 import PaymentSuccessPage from './PaymentSuccessPage';
@@ -468,8 +468,6 @@ const App: React.FC = () => {
         currentLayer.poseImages[currentPoseKey] = newImageUrl;
         return newHistory;
       });
-    // Fix: Corrected the `try...catch...finally` block syntax.
-    // The original code had a misplaced `}` before `finally`, which caused a parsing error.
     } catch (err) {
       setError(getFriendlyErrorMessage(String(err), 'Failed to apply changes'));
     } finally {
