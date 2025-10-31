@@ -5,7 +5,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { UploadCloudIcon, SaveIcon, Trash2Icon } from './icons';
+import { UploadCloudIcon, SaveIcon, Trash2Icon, SparklesIcon } from './icons';
 import { Compare } from './ui/compare';
 import { generateModelImage } from '../services/geminiService';
 import Spinner from './Spinner';
@@ -19,6 +19,7 @@ interface StartScreenProps {
   savedModels: SavedModel[];
   credits: number;
   onUseCredit: () => void;
+  onAddCredits: () => void;
 }
 
 const StartScreen: React.FC<StartScreenProps> = ({ 
@@ -27,7 +28,8 @@ const StartScreen: React.FC<StartScreenProps> = ({
   onDeleteModel,
   savedModels,
   credits, 
-  onUseCredit 
+  onUseCredit,
+  onAddCredits,
 }) => {
   const [userImageUrl, setUserImageUrl] = useState<string | null>(null);
   const [generatedModelUrl, setGeneratedModelUrl] = useState<string | null>(null);
@@ -111,12 +113,26 @@ const StartScreen: React.FC<StartScreenProps> = ({
               </p>
               <hr className="my-8 border-stone-200 dark:border-stone-800" />
               <div className="flex flex-col items-center lg:items-start w-full gap-3 font-sora">
-                <label htmlFor="image-upload-start" className={`w-full relative flex items-center justify-center px-8 py-3 text-base font-semibold text-white bg-fuchsia-500 rounded-md transition-all duration-200 ease-in-out ${credits <= 0 ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer group hover:bg-fuchsia-600'}`}>
-                  <UploadCloudIcon className="w-5 h-5 mr-3" />
-                  Create a New Model
-                </label>
-                <input id="image-upload-start" type="file" className="hidden" accept="image/png, image/jpeg, image/webp, image/avif, image/heic, image/heif" onChange={handleFileChange} disabled={credits <= 0} />
-                {credits <= 0 && <p className="text-red-500 font-semibold text-sm mt-2">You need credits to generate a model.</p>}
+                {credits > 0 ? (
+                  <>
+                    <label htmlFor="image-upload-start" className="w-full relative flex items-center justify-center px-8 py-3 text-base font-semibold text-white bg-fuchsia-500 rounded-md transition-all duration-200 ease-in-out cursor-pointer group hover:bg-fuchsia-600">
+                      <UploadCloudIcon className="w-5 h-5 mr-3" />
+                      Create a New Model
+                    </label>
+                    <input id="image-upload-start" type="file" className="hidden" accept="image/png, image/jpeg, image/webp, image/avif, image/heic, image/heif" onChange={handleFileChange} />
+                  </>
+                ) : (
+                  <>
+                    <button 
+                      onClick={onAddCredits}
+                      className="w-full relative flex items-center justify-center px-8 py-3 text-base font-semibold text-white bg-stone-800 rounded-md transition-all duration-200 ease-in-out cursor-pointer group hover:bg-stone-600"
+                    >
+                      <SparklesIcon className="w-5 h-5 mr-3" />
+                      Get More Credits
+                    </button>
+                    <p className="text-red-500 font-semibold text-sm -mt-1">You're out of credits to generate a model.</p>
+                  </>
+                )}
                 <p className="text-stone-500 dark:text-stone-400 text-sm">Use a clear, full-body photo for best results.</p>
                 {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
               </div>

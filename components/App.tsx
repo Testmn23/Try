@@ -561,7 +561,8 @@ const App: React.FC = () => {
               onDeleteModel={handleDeleteModel}
               savedModels={savedModels}
               credits={credits} 
-              onUseCredit={handleUseCredit} 
+              onUseCredit={handleUseCredit}
+              onAddCredits={handleAddCredits}
             />
           </motion.div>
         ) : (
