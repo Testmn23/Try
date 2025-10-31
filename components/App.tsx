@@ -6,27 +6,27 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Session } from '@supabase/supabase-js';
-import { supabase } from './lib/supabaseClient';
+import { supabase } from '../lib/supabaseClient';
 
-import StartScreen from './components/StartScreen';
-import Canvas from './components/Canvas';
-import WardrobePanel from './components/WardrobeModal';
-import OutfitStack from './components/OutfitStack';
-import { generateVirtualTryOnImage, generatePoseVariation, generateImageVariation, suggestOutfit } from './services/geminiService';
-import { OutfitLayer, WardrobeItem, Theme, SavedModel } from './types';
-import { ChevronDownIcon, ChevronUpIcon, SparklesIcon, DownloadIcon, LogOutIcon } from './components/icons';
-import { defaultWardrobe } from './wardrobe';
-import Footer from './components/Footer';
-import { getFriendlyErrorMessage } from './lib/utils';
-import Spinner from './components/Spinner';
-import LandingPage from './components/LandingPage';
-import ThemeSwitcher from './components/ThemeSwitcher';
-import PromptEditor from './components/PromptEditor';
-import BackgroundSelector from './components/BackgroundSelector';
-import AspectRatioSelector from './components/AspectRatioSelector';
-import LegalModal from './components/LegalModal';
-import ProfessionalShotsPanel from './components/ProfessionalShotsPanel';
-import Auth from './components/Auth';
+import StartScreen from './StartScreen';
+import Canvas from './Canvas';
+import WardrobePanel from './WardrobeModal';
+import OutfitStack from './OutfitStack';
+import { generateVirtualTryOnImage, generatePoseVariation, generateImageVariation, suggestOutfit } from '../services/geminiService';
+import { OutfitLayer, WardrobeItem, Theme, SavedModel } from '../types';
+import { ChevronDownIcon, ChevronUpIcon, SparklesIcon, DownloadIcon, LogOutIcon } from './icons';
+import { defaultWardrobe } from '../wardrobe';
+import Footer from './Footer';
+import { getFriendlyErrorMessage } from '../lib/utils';
+import Spinner from './Spinner';
+import LandingPage from './LandingPage';
+import ThemeSwitcher from './ThemeSwitcher';
+import PromptEditor from './PromptEditor';
+import BackgroundSelector from './BackgroundSelector';
+import AspectRatioSelector from './AspectRatioSelector';
+import LegalModal from './LegalModal';
+import ProfessionalShotsPanel from './ProfessionalShotsPanel';
+import Auth from './Auth';
 
 
 const POSE_INSTRUCTIONS = [
@@ -59,6 +59,28 @@ const useMediaQuery = (query: string): boolean => {
   return matches;
 };
 
+const ApiKeyError: React.FC<{ apiKeyName: string }> = ({ apiKeyName }) => (
+  <div className="w-screen h-screen flex flex-col items-center justify-center bg-red-50 dark:bg-red-950/20 p-4 font-sora">
+    <div className="w-full max-w-md mx-auto text-center bg-white dark:bg-stone-900 p-8 rounded-lg shadow-2xl border border-red-200 dark:border-red-800">
+      <h1 className="text-3xl font-playfair font-bold text-red-700 dark:text-red-400">
+        Configuration Error
+      </h1>
+      <p className="mt-4 text-md text-stone-700 dark:text-stone-300">
+        The application is missing a required API key.
+      </p>
+      <div className="mt-6 text-left bg-stone-100 dark:bg-stone-800 p-4 rounded-md">
+        <p className="text-sm text-stone-600 dark:text-stone-400">Please ensure the following environment variable is set:</p>
+        <code className="mt-2 block w-full text-center bg-stone-200 dark:bg-stone-700 text-red-600 dark:text-red-400 font-mono p-2 rounded">
+          {apiKeyName}
+        </code>
+      </div>
+      <p className="mt-4 text-xs text-stone-500 dark:text-stone-500">
+        The application cannot start until this is configured correctly.
+      </p>
+    </div>
+  </div>
+);
+
 
 const App: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
@@ -79,6 +101,11 @@ const App: React.FC = () => {
   });
   const [savedModels, setSavedModels] = useState<SavedModel[]>([]);
   const [legalModalContent, setLegalModalContent] = useState<string | null>(null);
+
+  // API Key validation
+  if (!process.env.API_KEY) {
+    return <ApiKeyError apiKeyName="API_KEY" />;
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -411,6 +438,8 @@ const App: React.FC = () => {
         currentLayer.poseImages[currentPoseKey] = newImageUrl;
         return newHistory;
       });
+    // Fix: Corrected the `try...catch...finally` block syntax.
+    // The original code had a misplaced `}` before `finally`, which caused a parsing error.
     } catch (err) {
       setError(getFriendlyErrorMessage(String(err), 'Failed to apply changes'));
     } finally {
