@@ -183,28 +183,28 @@ async function handleGoogleAIRequest(action: string, payload: any) {
 // =====================================================================
 
 const handleOpenRouterImageResponse = (data: any): string => {
-    const message = data.choices?.[0]?.message;
-
-    // Correctly parse the image data from the 'images' array
+    const choice = data.choices?.[0];
+    const message = choice?.message;
     const imageUrl = message?.images?.[0]?.image_url?.url;
 
     if (imageUrl && imageUrl.startsWith('data:image')) {
         return imageUrl;
     }
 
-    // Fallback error handling if the expected image is not found
+    // Improved error handling if the expected image is not found
     const fullResponseString = JSON.stringify(data, null, 2);
     console.error("OpenRouter response did not contain a valid image. Full response:", fullResponseString);
     
-    const textResponse = message?.content;
-    const modelError = data.error?.message;
+    const finishReason = choice?.native_finish_reason || choice?.finish_reason;
+    let errorMessage = "The AI model did not generate an image.";
     
-    throw new Error(
-        `OpenRouter response did not contain a valid image. ` +
-        (modelError ? `Error: ${modelError}. ` : '') +
-        (textResponse ? `Text response: "${textResponse}". ` : '') +
-        `Full response: ${fullResponseString}`
-    );
+    if (finishReason && finishReason.toLowerCase() !== 'stop') {
+        errorMessage += ` The process stopped unexpectedly. (Reason: ${finishReason})`;
+    } else {
+        errorMessage += " This can happen due to safety filters, a complex prompt, or a temporary API issue. Please try a simpler request.";
+    }
+
+    throw new Error(errorMessage);
 };
 
 async function callOpenRouter(model: string, messages: any[], req: Request, isJsonMode: boolean = false) {
