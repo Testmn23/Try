@@ -183,28 +183,28 @@ async function handleGoogleAIRequest(action: string, payload: any) {
 // =====================================================================
 
 const handleOpenRouterImageResponse = (data: any): string => {
-    const content = data.choices?.[0]?.message?.content;
-    if (!Array.isArray(content)) {
-        // Temporarily include the full response in the error for debugging.
-        const fullResponseString = JSON.stringify(data, null, 2);
-        console.error("OpenRouter did not return a valid content array. Full response:", fullResponseString);
-        throw new Error(`OpenRouter response did not contain a valid content array. Full response: ${fullResponseString}`);
+    const message = data.choices?.[0]?.message;
+
+    // Correctly parse the image data from the 'images' array
+    const imageUrl = message?.images?.[0]?.image_url?.url;
+
+    if (imageUrl && imageUrl.startsWith('data:image')) {
+        return imageUrl;
     }
 
-    // OpenRouter uses a different response format for image data
-    const imagePart = content.find(part => part.type === 'image' && part.source?.type === 'base64');
+    // Fallback error handling if the expected image is not found
+    const fullResponseString = JSON.stringify(data, null, 2);
+    console.error("OpenRouter response did not contain a valid image. Full response:", fullResponseString);
     
-    if (imagePart?.source) {
-        const { media_type, data } = imagePart.source;
-        return `data:${media_type};base64,${data}`;
-    }
-
-    const textPart = content.find(part => part.type === 'text');
+    const textResponse = message?.content;
     const modelError = data.error?.message;
-    const errorMessage = `OpenRouter did not return an image. ` +
-      (modelError ? `Error: ${modelError}` : '') +
-      (textPart ? ` It responded with: "${textPart.text}"` : "");
-    throw new Error(errorMessage);
+    
+    throw new Error(
+        `OpenRouter response did not contain a valid image. ` +
+        (modelError ? `Error: ${modelError}. ` : '') +
+        (textResponse ? `Text response: "${textResponse}". ` : '') +
+        `Full response: ${fullResponseString}`
+    );
 };
 
 async function callOpenRouter(model: string, messages: any[], req: Request, isJsonMode: boolean = false) {
