@@ -185,7 +185,10 @@ async function handleGoogleAIRequest(action: string, payload: any) {
 const handleOpenRouterImageResponse = (data: any): string => {
     const content = data.choices?.[0]?.message?.content;
     if (!Array.isArray(content)) {
-        throw new Error("OpenRouter response did not contain a valid content array.");
+        // Temporarily include the full response in the error for debugging.
+        const fullResponseString = JSON.stringify(data, null, 2);
+        console.error("OpenRouter did not return a valid content array. Full response:", fullResponseString);
+        throw new Error(`OpenRouter response did not contain a valid content array. Full response: ${fullResponseString}`);
     }
 
     // OpenRouter uses a different response format for image data
