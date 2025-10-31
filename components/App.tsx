@@ -59,29 +59,6 @@ const useMediaQuery = (query: string): boolean => {
   return matches;
 };
 
-const ApiKeyError: React.FC<{ apiKeyName: string }> = ({ apiKeyName }) => (
-  <div className="w-screen h-screen flex flex-col items-center justify-center bg-red-50 dark:bg-red-950/20 p-4 font-sora">
-    <div className="w-full max-w-md mx-auto text-center bg-white dark:bg-stone-900 p-8 rounded-lg shadow-2xl border border-red-200 dark:border-red-800">
-      <h1 className="text-3xl font-playfair font-bold text-red-700 dark:text-red-400">
-        Configuration Error
-      </h1>
-      <p className="mt-4 text-md text-stone-700 dark:text-stone-300">
-        The application is missing a required API key.
-      </p>
-      <div className="mt-6 text-left bg-stone-100 dark:bg-stone-800 p-4 rounded-md">
-        <p className="text-sm text-stone-600 dark:text-stone-400">Please ensure the following environment variable is set:</p>
-        <code className="mt-2 block w-full text-center bg-stone-200 dark:bg-stone-700 text-red-600 dark:text-red-400 font-mono p-2 rounded">
-          {apiKeyName}
-        </code>
-      </div>
-      <p className="mt-4 text-xs text-stone-500 dark:text-stone-500">
-        The application cannot start until this is configured correctly.
-      </p>
-    </div>
-  </div>
-);
-
-
 const App: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [appState, setAppState] = useState<'landing' | 'app'>('landing');
@@ -101,11 +78,6 @@ const App: React.FC = () => {
   });
   const [savedModels, setSavedModels] = useState<SavedModel[]>([]);
   const [legalModalContent, setLegalModalContent] = useState<string | null>(null);
-
-  // API Key validation
-  if (!process.env.API_KEY) {
-    return <ApiKeyError apiKeyName="API_KEY" />;
-  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
