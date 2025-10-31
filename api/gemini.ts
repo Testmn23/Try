@@ -3,357 +3,225 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { GoogleGenAI, GenerateContentResponse, Modality, Type } from "@google/genai";
+// @ts-ignore: Deno deploy will provide Buffer
+import { Buffer } from 'node:buffer';
+import { GoogleGenAI, Modality, Part, Type } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
-import { v4 as uuidv4 } from 'uuid';
 
-// --- CONFIGURATION ---
-// Determines which backend to use. Defaults to true.
-// Set USE_OPENROUTER=false in your environment to use the direct Google GenAI API.
-const USE_OPENROUTER = process.env.USE_OPENROUTER ? process.env.USE_OPENROUTER === 'true' : true;
-
-const GOOGLE_IMAGE_MODEL = 'gemini-2.5-flash-image';
-const GOOGLE_PRO_MODEL = 'gemini-2.5-pro';
-
-const OPENROUTER_IMAGE_MODEL = 'google/gemini-2.5-flash-image-preview';
-const OPENROUTER_PRO_MODEL = 'google/gemini-2.5-pro';
-
-// --- Helper Functions ---
-const dataUrlToBlob = (dataUrl: string): Blob => {
-    const arr = dataUrl.split(',');
-    if (arr.length < 2) throw new Error("Invalid data URL");
-    const mimeMatch = arr[0].match(/:(.*?);/);
-    if (!mimeMatch || !mimeMatch[1]) throw new Error("Could not parse MIME type from data URL");
-    
-    const mime = mimeMatch[1];
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while(n--){
-        u8arr[n] = bstr.charCodeAt(n);
-    }
-    return new Blob([u8arr], {type:mime});
-}
-
-// --- Vercel Edge Function Handler ---
 export const config = {
   runtime: 'edge',
 };
 
-export default async function handler(req: Request) {
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
-  }
+// Initialize Gemini API
+if (!process.env.API_KEY) {
+    throw new Error("API_KEY environment variable not set.");
+}
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const imageModel = 'gemini-2.5-flash-image';
+const textModel = 'gemini-2.5-flash';
 
-  try {
-    const { action, payload } = await req.json();
+// Initialize Supabase Admin Client
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("Supabase environment variables for admin client are not set.");
+}
+const supabaseAdmin = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
-    let result: any;
-    if (USE_OPENROUTER) {
-      result = await handleOpenRouterRequest(action, payload, req);
-    } else {
-      result = await handleGoogleAIRequest(action, payload);
+// Helper to convert base64 to ArrayBuffer
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
     }
-
-    return new Response(JSON.stringify(result), { status: 200, headers: { 'Content-Type': 'application/json' } });
-
-  } catch (error) {
-    console.error('API Error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-    return new Response(JSON.stringify({ error: `Server error: ${errorMessage}` }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-  }
+    return bytes.buffer;
 }
 
-// =================================================================
-// --- UNIVERSAL IMAGE UPLOAD (to Supabase Storage) ---
-// =================================================================
-let _supabaseAdmin;
-const getSupabaseAdmin = () => {
-    if (!_supabaseAdmin) {
-        if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-            throw new Error("Supabase Admin credentials are not set.");
-        }
-        _supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+// Helper to parse data URLs
+function parseDataUrl(dataUrl: string) {
+    const match = dataUrl.match(/^data:(image\/\w+);base64,(.*)$/);
+    if (!match) {
+        throw new Error('Invalid data URL format');
     }
-    return _supabaseAdmin;
-};
-
-const uploadImageAndGetUrl = async (base64DataUrl: string, userId: string): Promise<string> => {
-    const supabase = getSupabaseAdmin();
-    const imageBlob = dataUrlToBlob(base64DataUrl);
-    const fileExt = imageBlob.type.split('/')[1] || 'png';
-    const filePath = `${userId}/${uuidv4()}.${fileExt}`;
-
-    const { error: uploadError } = await supabase.storage
-        .from('generated_images')
-        .upload(filePath, imageBlob);
-
-    if (uploadError) {
-        throw new Error(`Failed to upload image to storage: ${uploadError.message}`);
-    }
-
-    const { data } = supabase.storage
-        .from('generated_images')
-        .getPublicUrl(filePath);
-
-    if (!data.publicUrl) {
-        throw new Error("Could not get public URL for the uploaded image.");
-    }
-    
-    return data.publicUrl;
-};
-
-
-// =================================================================
-// --- GOOGLE AI SDK IMPLEMENTATION (when USE_OPENROUTER is false) ---
-// =================================================================
-
-let _ai: GoogleGenAI;
-const getAiClient = () => {
-    if (!_ai) {
-        if (!process.env.API_KEY) {
-            throw new Error("API_KEY environment variable not set on the server.");
-        }
-        _ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    }
-    return _ai;
-};
-
-const dataUrlToPart = (dataUrl: string) => {
-    const arr = dataUrl.split(',');
-    if (arr.length < 2) throw new Error("Invalid data URL");
-    const mimeMatch = arr[0].match(/:(.*?);/);
-    if (!mimeMatch || !mimeMatch[1]) throw new Error("Could not parse MIME type from data URL");
-    return { inlineData: { mimeType: mimeMatch[1], data: arr[1] } };
+    const mimeType = match[1];
+    const base64Data = match[2];
+    return { mimeType, base64Data };
 }
 
-const handleGoogleApiResponse = (response: GenerateContentResponse): string => {
-    // ... (rest of the function is the same as before)
-    if (response.promptFeedback?.blockReason) {
-        const { blockReason, blockReasonMessage } = response.promptFeedback;
-        const errorMessage = `Request was blocked. Reason: ${blockReason}. ${blockReasonMessage || ''}`;
-        throw new Error(errorMessage);
+// Helper to fetch an image from a URL and convert it to a Gemini Part
+async function imageUrlToPart(url: string): Promise<Part> {
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch image from URL: ${url}. Status: ${response.status}`);
     }
-    for (const candidate of response.candidates ?? []) {
-        const imagePart = candidate.content?.parts?.find(part => part.inlineData);
-        if (imagePart?.inlineData) {
-            const { mimeType, data } = imagePart.inlineData;
-            return `data:${mimeType};base64,${data}`;
-        }
-    }
-    const finishReason = response.candidates?.[0]?.finishReason;
-    if (finishReason && finishReason !== 'STOP') {
-        const errorMessage = `Image generation stopped unexpectedly. Reason: ${finishReason}. This often relates to safety settings.`;
-        throw new Error(errorMessage);
-    }
-    const textFeedback = response.text?.trim();
-    const errorMessage = `The AI model did not return an image. ` + (textFeedback ? `The model responded with text: "${textFeedback}"` : "This can happen due to safety filters or if the request is too complex. Please try a different image.");
-    throw new Error(errorMessage);
-};
-
-async function handleGoogleAIRequest(action: string, payload: any) {
-    const ai = getAiClient();
-    let response: GenerateContentResponse;
-
-    const { userId } = payload; // Assuming userId is passed in all payloads for storage
-    if (!userId) throw new Error("User ID is required for image processing.");
-
-    switch (action) {
-        case 'generateModelImage': {
-            const { userImageDataUrl } = payload;
-            const userImagePart = dataUrlToPart(userImageDataUrl);
-            const prompt = "You are an expert fashion photographer AI. Transform the person in this image into a full-body fashion model photo suitable for an e-commerce website. The background must be a clean, neutral studio backdrop (light gray, #f0f0f0). The person should have a neutral, professional model expression. Preserve the person's identity, unique features, and body type, but place them in a standard, relaxed standing model pose. The final image must be photorealistic. Return ONLY the final image.";
-            response = await ai.models.generateContent({
-                model: GOOGLE_IMAGE_MODEL,
-                contents: { parts: [userImagePart, { text: prompt }] },
-                config: { responseModalities: [Modality.IMAGE] },
-            });
-            const imageUrl = await uploadImageAndGetUrl(handleGoogleApiResponse(response), userId);
-            return { imageUrl };
-        }
-
-        case 'generateVirtualTryOnImage': {
-            const { modelImageUrl, garmentImageDataUrl, garmentInfo } = payload;
-            const modelImagePart = dataUrlToPart(modelImageUrl);
-            const garmentImagePart = dataUrlToPart(garmentImageDataUrl);
-            const prompt = garmentInfo.category === 'clothing' ? /* clothing prompt */ `You are an expert virtual try-on AI. You will be given a 'model image' and a 'garment image'. Your task is to create a new photorealistic image where the person from the 'model image' is wearing the clothing from the 'garment image'.\n\n**Crucial Rules:**\n1.  **Complete Garment Replacement:** You MUST completely REMOVE and REPLACE the clothing item worn by the person in the 'model image' with the new garment. No part of the original clothing (e.g., collars, sleeves, patterns) should be visible in the final image.\n2.  **Preserve the Model:** The person's face, hair, body shape, and pose from the 'model image' MUST remain unchanged.\n3.  **Preserve the Background:** The entire background from the 'model image' MUST be preserved perfectly.\n4.  **Apply the Garment:** Realistically fit the new garment onto the person. It should adapt to their pose with natural folds, shadows, and lighting consistent with the original scene.\n5.  **Output:** Return ONLY the final, edited image. Do not include any text.` : /* accessory prompt */ `You are an expert virtual try-on AI for accessories. You will be given a 'model image' and an 'accessory image'. Your task is to create a new photorealistic image where the person from the 'model image' is now wearing the item from the 'accessory image'.\n\n**Crucial Rules:**\n1.  **ADD the Accessory:** Realistically place the accessory on the person. It should integrate naturally with their existing outfit and pose (e.g., a necklace should go around their neck, sunglasses on their face).\n2.  **Do NOT Replace Clothing:** The person's existing clothing MUST remain unchanged.\n3.  **Preserve the Model & Background:** The person's face, hair, body shape, pose, and the background from the 'model image' MUST be perfectly preserved.\n4.  **Output:** Return ONLY the final, edited image. Do not include any text.`;
-            response = await ai.models.generateContent({
-                model: GOOGLE_IMAGE_MODEL,
-                contents: { parts: [modelImagePart, garmentImagePart, { text: prompt }] },
-                config: { responseModalities: [Modality.IMAGE] },
-            });
-            const imageUrl = await uploadImageAndGetUrl(handleGoogleApiResponse(response), userId);
-            return { imageUrl };
-        }
-
-        case 'generatePoseVariation': {
-            const { tryOnImageUrl, poseInstruction } = payload;
-            const tryOnImagePart = dataUrlToPart(tryOnImageUrl);
-            const prompt = `You are an expert fashion photographer AI. Take this image and regenerate it from a different perspective. The person, clothing, and background style must remain identical. The new perspective should be: "${poseInstruction}". Return ONLY the final image.`;
-            response = await ai.models.generateContent({
-                model: GOOGLE_IMAGE_MODEL,
-                contents: { parts: [tryOnImagePart, { text: prompt }] },
-                config: { responseModalities: [Modality.IMAGE] },
-            });
-            const imageUrl = await uploadImageAndGetUrl(handleGoogleApiResponse(response), userId);
-            return { imageUrl };
-        }
-
-        case 'generateImageVariation': {
-            const { baseImageUrl, prompt } = payload;
-            const baseImagePart = dataUrlToPart(baseImageUrl);
-            const fullPrompt = `You are an expert photo editing AI. You will be given an image and a text instruction. Your task is to edit the image based on the instruction while maintaining photorealism and the core identity of the subject.\nInstruction: "${prompt}".\nKey rules:\n1.  Apply the change specified in the instruction accurately.\n2.  Preserve all other aspects of the image (person's identity, pose, main outfit unless specified) as closely as possible.\n3.  Ensure the final image is photorealistic and high quality.\n4.  Return ONLY the final, edited image. Do not include any text or commentary.`;
-            response = await ai.models.generateContent({
-                model: GOOGLE_IMAGE_MODEL,
-                contents: { parts: [baseImagePart, { text: fullPrompt }] },
-                config: { responseModalities: [Modality.IMAGE] },
-            });
-            const imageUrl = await uploadImageAndGetUrl(handleGoogleApiResponse(response), userId);
-            return { imageUrl };
-        }
-
-        case 'suggestOutfit': {
-            const { wardrobe, theme } = payload;
-            const prompt = `You are an AI fashion stylist. Based on the following list of available wardrobe items, create a stylish and coherent outfit that fits the theme: "${theme}".\n\nAvailable Items:\n${JSON.stringify(wardrobe, null, 2)}\n\nRules:\n1.  Choose one 'clothing' item.\n2.  Choose up to two 'accessory' items that complement the clothing.\n3.  Prioritize creating a complete and fashionable look.\n4.  Return ONLY a JSON object with a single key "outfitIds" which is an array of the chosen item IDs.`;
-            response = await ai.models.generateContent({
-                model: GOOGLE_PRO_MODEL,
-                contents: prompt,
-                config: {
-                    responseMimeType: 'application/json',
-                    responseSchema: {
-                        type: Type.OBJECT,
-                        properties: {
-                            outfitIds: { type: Type.ARRAY, items: { type: Type.STRING } }
-                        }
-                    }
-                }
-            });
-            const text = response.text;
-            if (!text) {
-                throw new Error("The AI model did not return any text for the outfit suggestion.");
-            }
-            const jsonResult = JSON.parse(text.trim());
-            return { outfitIds: jsonResult.outfitIds };
-        }
-
-        default:
-            throw new Error(`Invalid action: ${action}`);
-    }
-}
-
-
-// =====================================================================
-// --- OPENROUTER IMPLEMENTATION (when USE_OPENROUTER is true) ---
-// =====================================================================
-
-const handleOpenRouterImageResponse = (data: any): string => {
-    const choice = data.choices?.[0];
-    const message = choice?.message;
-    const imageUrl = message?.images?.[0]?.image_url?.url;
-
-    if (imageUrl && imageUrl.startsWith('data:image')) {
-        return imageUrl;
-    }
-
-    // Improved error handling if the expected image is not found
-    const fullResponseString = JSON.stringify(data, null, 2);
-    console.error("OpenRouter response did not contain a valid image. Full response:", fullResponseString);
-    
-    const finishReason = choice?.native_finish_reason || choice?.finish_reason;
-    let errorMessage = "The AI model did not generate an image.";
-    
-    if (finishReason && finishReason.toLowerCase() !== 'stop') {
-        errorMessage += ` The process stopped unexpectedly. (Reason: ${finishReason})`;
-    } else {
-        errorMessage += " This can happen due to safety filters, a complex prompt, or a temporary API issue. Please try a simpler request.";
-    }
-
-    throw new Error(errorMessage);
-};
-
-async function callOpenRouter(model: string, messages: any[], req: Request, isJsonMode: boolean = false) {
-    if (!process.env.OPENROUTER_API_KEY) {
-        throw new Error("OPENROUTER_API_KEY environment variable not set.");
-    }
-
-    const body: any = { model, messages };
-    if (isJsonMode) {
-        body.response_format = { type: "json_object" };
-    }
-
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-            "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-            "Content-Type": "application/json",
-            "HTTP-Referer": req.headers.get('origin') || 'http://localhost:3000',
-            "X-Title": "Fit Check"
+    const buffer = await response.arrayBuffer();
+    const base64Data = Buffer.from(buffer).toString('base64');
+    const mimeType = response.headers.get('content-type') || 'image/png';
+    return {
+        inlineData: {
+            mimeType,
+            data: base64Data,
         },
-        body: JSON.stringify(body)
+    };
+}
+
+// Helper to upload an image buffer to Supabase Storage
+async function uploadImageToSupabase(imageBytes: ArrayBuffer, userId: string, fileName: string): Promise<string> {
+    const filePath = `${userId}/${fileName}`;
+    const { error } = await supabaseAdmin.storage
+        .from('images')
+        .upload(filePath, imageBytes, {
+            contentType: 'image/png',
+            upsert: true,
+        });
+
+    if (error) {
+        throw new Error(`Supabase upload error: ${error.message}`);
+    }
+
+    const { data } = supabaseAdmin.storage.from('images').getPublicUrl(filePath);
+    return data.publicUrl;
+}
+
+// Main API handler
+export default async function handler(req: Request) {
+    if (req.method !== 'POST') {
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    try {
+        const { action, payload } = await req.json();
+
+        switch (action) {
+            case 'generateModelImage':
+                return await handleGenerateModelImage(payload);
+            case 'generateVirtualTryOnImage':
+                return await handleGenerateVirtualTryOnImage(payload);
+            case 'generatePoseVariation':
+                return await handleGeneratePoseVariation(payload);
+            case 'generateImageVariation':
+                return await handleGenerateImageVariation(payload);
+            case 'suggestOutfit':
+                return await handleSuggestOutfit(payload);
+            default:
+                return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), { status: 400 });
+        }
+    } catch (error) {
+        console.error(`API Error:`, error);
+        const errorMessage = error instanceof Error ? error.message : 'An unknown server error occurred';
+        return new Response(JSON.stringify({ error: errorMessage }), { status: 500 });
+    }
+}
+
+
+async function handleImageGeneration(promptParts: Part[], userId: string, outputFileName: string) {
+    const response = await ai.models.generateContent({
+        model: imageModel,
+        contents: { parts: promptParts },
+        config: {
+            responseModalities: [Modality.IMAGE],
+        },
     });
 
-    if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`OpenRouter API error (${response.status}): ${errorData.error?.message || response.statusText}`);
+    const imagePart = response.candidates?.[0]?.content?.parts?.find(part => part.inlineData);
+    if (!imagePart || !imagePart.inlineData) {
+        console.error('Gemini API response dump:', JSON.stringify(response, null, 2));
+        throw new Error('Image generation failed: No image data in response from Gemini.');
     }
 
-    return response.json();
+    const imageBytes = base64ToArrayBuffer(imagePart.inlineData.data);
+    const imageUrl = await uploadImageToSupabase(imageBytes, userId, outputFileName);
+    
+    return new Response(JSON.stringify({ imageUrl }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
-async function handleOpenRouterRequest(action: string, payload: any, req: Request) {
+async function handleGenerateModelImage(payload: { userImageDataUrl: string, userId: string }) {
+    const { userImageDataUrl, userId } = payload;
+    const { mimeType, base64Data } = parseDataUrl(userImageDataUrl);
+    const userImagePart: Part = { inlineData: { mimeType, data: base64Data } };
+    
+    const prompt = `You are an expert AI fashion model generator. Your task is to transform the provided user image into a high-quality, realistic, full-body fashion model photo. **Crucial Rules:** 1. The output MUST be a full-body shot of the person. 2. The person should have a neutral, professional model-like expression and pose. 3. The background MUST be a clean, solid, light gray (#f0f0f0) studio backdrop. 4. The person's original clothing should be replaced with a simple, form-fitting, plain white t-shirt and simple blue jeans. 5. Retain the person's physical characteristics (face, hair, body shape) as accurately as possible. 6. The final image should be photorealistic and high-resolution. Return ONLY the final image.`;
+    const textPart: Part = { text: prompt };
 
-    const { userId } = payload;
-    if (action !== 'suggestOutfit' && !userId) {
-        throw new Error("User ID is required for image processing.");
-    }
+    return await handleImageGeneration([userImagePart, textPart], userId, `model-${Date.now()}.png`);
+}
 
-    switch (action) {
-        case 'generateModelImage': {
-            const { userImageDataUrl } = payload;
-            const prompt = "You are an expert fashion photographer AI. Transform the person in this image into a full-body fashion model photo suitable for an e-commerce website. The background must be a clean, neutral studio backdrop (light gray, #f0f0f0). The person should have a neutral, professional model expression. Preserve the person's identity, unique features, and body type, but place them in a standard, relaxed standing model pose. The final image must be photorealistic. Return ONLY the final image.";
-            const messages = [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: userImageDataUrl } }] }];
-            const data = await callOpenRouter(OPENROUTER_IMAGE_MODEL, messages, req);
-            const imageUrl = await uploadImageAndGetUrl(handleOpenRouterImageResponse(data), userId);
-            return { imageUrl };
+async function handleGenerateVirtualTryOnImage(payload: { modelImageUrl: string, garmentImageDataUrl: string, garmentInfo: { name: string }, userId: string }) {
+    const { modelImageUrl, garmentImageDataUrl, garmentInfo, userId } = payload;
+
+    const modelImagePart = await imageUrlToPart(modelImageUrl);
+    const { mimeType, base64Data } = parseDataUrl(garmentImageDataUrl);
+    const garmentImagePart: Part = { inlineData: { mimeType, data: base64Data } };
+
+    const prompt = `You are an expert AI virtual try-on stylist. Your task is to realistically apply the provided garment image onto the person in the base model image. **Crucial Rules:** 1. The garment is a ${garmentInfo.name}. 2. Preserve the model's pose, body shape, and facial features. 3. The garment should fit naturally, with realistic lighting, shadows, and fabric draping that matches the model's pose. 4. Do not change the background. 5. Return ONLY the final, photorealistic image.`;
+    const textPart: Part = { text: prompt };
+
+    return await handleImageGeneration([modelImagePart, garmentImagePart, textPart], userId, `try-on-${Date.now()}.png`);
+}
+
+async function handleGeneratePoseVariation(payload: { tryOnImageUrl: string, poseInstruction: string, userId: string }) {
+    const { tryOnImageUrl, poseInstruction, userId } = payload;
+
+    const baseImagePart = await imageUrlToPart(tryOnImageUrl);
+    const prompt = `You are an expert AI fashion photographer. Your task is to recreate the image of the person with their current outfit, but in a new pose. **Crucial Rules:** 1. The new pose is: "${poseInstruction}". 2. The person's appearance, clothing, and the background MUST remain identical. 3. The new pose should look natural and photorealistic. 4. The lighting and shadows must be adjusted realistically for the new pose. Return ONLY the final image.`;
+    const textPart: Part = { text: prompt };
+
+    return await handleImageGeneration([baseImagePart, textPart], userId, `pose-${Date.now()}.png`);
+}
+
+async function handleGenerateImageVariation(payload: { baseImageUrl: string, prompt: string, userId: string }) {
+    const { baseImageUrl, prompt, userId } = payload;
+    const baseImagePart = await imageUrlToPart(baseImageUrl);
+    const textPart: Part = { text: prompt };
+
+    return await handleImageGeneration([baseImagePart, textPart], userId, `variation-${Date.now()}.png`);
+}
+
+async function handleSuggestOutfit(payload: { wardrobe: { id: string, name: string, category: string }[], theme: string }) {
+    const { wardrobe, theme } = payload;
+
+    const wardrobeList = wardrobe.map(item => `- ID: "${item.id}", Name: "${item.name}", Category: "${item.category}"`).join('\n');
+    const prompt = `You are a fashion stylist AI. Your goal is to create a coherent and stylish outfit from a list of available wardrobe items based on a specific theme.
+
+**Theme:** "${theme}"
+
+**Available Wardrobe Items:**
+${wardrobeList}
+
+**Instructions:**
+1. Analyze the theme and the available items.
+2. Select a combination of items that creates a complete and fashionable outfit for the theme.
+3. Your primary goal is to return a JSON object containing a single key "outfitIds", which is an array of the item IDs for the selected outfit. For example: {"outfitIds": ["item-id-1", "item-id-2"]}.
+4. Prioritize creating a logical outfit. If you cannot form a complete outfit, return the best combination possible. If no items fit the theme, return an empty array for "outfitIds".
+5. Do not include items that would clash.
+6. Return ONLY the JSON object. Do not include any other text, explanation, or markdown formatting.`;
+    
+    const response = await ai.models.generateContent({
+        model: textModel,
+        contents: prompt,
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    outfitIds: {
+                        type: Type.ARRAY,
+                        items: { type: Type.STRING }
+                    }
+                },
+                required: ['outfitIds']
+            }
         }
+    });
 
-        case 'generateVirtualTryOnImage': {
-            const { modelImageUrl, garmentImageDataUrl, garmentInfo } = payload;
-            const prompt = garmentInfo.category === 'clothing' ? /* clothing prompt */ `You are an expert virtual try-on AI. You will be given a 'model image' and a 'garment image'. Your task is to create a new photorealistic image where the person from the 'model image' is wearing the clothing from the 'garment image'.\n\n**Crucial Rules:**\n1.  **Complete Garment Replacement:** You MUST completely REMOVE and REPLACE the clothing item worn by the person in the 'model image' with the new garment. No part of the original clothing (e.g., collars, sleeves, patterns) should be visible in the final image.\n2.  **Preserve the Model:** The person's face, hair, body shape, and pose from the 'model image' MUST remain unchanged.\n3.  **Preserve the Background:** The entire background from the 'model image' MUST be preserved perfectly.\n4.  **Apply the Garment:** Realistically fit the new garment onto the person. It should adapt to their pose with natural folds, shadows, and lighting consistent with the original scene.\n5.  **Output:** Return ONLY the final, edited image. Do not include any text.` : /* accessory prompt */ `You are an expert virtual try-on AI for accessories. You will be given a 'model image' and an 'accessory image'. Your task is to create a new photorealistic image where the person from the 'model image' is now wearing the item from the 'accessory image'.\n\n**Crucial Rules:**\n1.  **ADD the Accessory:** Realistically place the accessory on the person. It should integrate naturally with their existing outfit and pose (e.g., a necklace should go around their neck, sunglasses on their face).\n2.  **Do NOT Replace Clothing:** The person's existing clothing MUST remain unchanged.\n3.  **Preserve the Model & Background:** The person's face, hair, body shape, pose, and the background from the 'model image' MUST be perfectly preserved.\n4.  **Output:** Return ONLY the final, edited image. Do not include any text.`;
-            const messages = [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: modelImageUrl } }, { type: "image_url", image_url: { url: garmentImageDataUrl } }] }];
-            const data = await callOpenRouter(OPENROUTER_IMAGE_MODEL, messages, req);
-            const imageUrl = await uploadImageAndGetUrl(handleOpenRouterImageResponse(data), userId);
-            return { imageUrl };
-        }
+    const jsonText = response.text.trim();
+    const sanitizedJson = jsonText.replace(/^```json\n?/, '').replace(/\n?```$/, '');
 
-        case 'generatePoseVariation': {
-            const { tryOnImageUrl, poseInstruction } = payload;
-            const prompt = `You are an expert fashion photographer AI. Take this image and regenerate it from a different perspective. The person, clothing, and background style must remain identical. The new perspective should be: "${poseInstruction}". Return ONLY the final image.`;
-            const messages = [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: tryOnImageUrl } }] }];
-            const data = await callOpenRouter(OPENROUTER_IMAGE_MODEL, messages, req);
-            const imageUrl = await uploadImageAndGetUrl(handleOpenRouterImageResponse(data), userId);
-            return { imageUrl };
-        }
+    const jsonResponse = JSON.parse(sanitizedJson);
+    const outfitIds = jsonResponse.outfitIds || [];
 
-        case 'generateImageVariation': {
-            const { baseImageUrl, prompt } = payload;
-            const fullPrompt = `You are an expert photo editing AI. You will be given an image and a text instruction. Your task is to edit the image based on the instruction while maintaining photorealism and the core identity of the subject.\nInstruction: "${prompt}".\nKey rules:\n1.  Apply the change specified in the instruction accurately.\n2.  Preserve all other aspects of the image (person's identity, pose, main outfit unless specified) as closely as possible.\n3.  Ensure the final image is photorealistic and high quality.\n4.  Return ONLY the final, edited image. Do not include any text or commentary.`;
-            const messages = [{ role: "user", content: [{ type: "text", text: fullPrompt }, { type: "image_url", image_url: { url: baseImageUrl } }] }];
-            const data = await callOpenRouter(OPENROUTER_IMAGE_MODEL, messages, req);
-            const imageUrl = await uploadImageAndGetUrl(handleOpenRouterImageResponse(data), userId);
-            return { imageUrl };
-        }
-
-        case 'suggestOutfit': {
-            const { wardrobe, theme } = payload;
-            const prompt = `You are an AI fashion stylist. Based on the following list of available wardrobe items, create a stylish and coherent outfit that fits the theme: "${theme}".\n\nAvailable Items:\n${JSON.stringify(wardrobe, null, 2)}\n\nRules:\n1.  Choose one 'clothing' item.\n2.  Choose up to two 'accessory' items that complement the clothing.\n3.  Prioritize creating a complete and fashionable look.\n4.  Return ONLY a JSON object with a single key "outfitIds" which is an array of the chosen item IDs.`;
-            const messages = [{ role: "user", content: prompt }];
-            const data = await callOpenRouter(OPENROUTER_PRO_MODEL, messages, req, true);
-            const jsonResult = JSON.parse(data.choices[0].message.content);
-            return { outfitIds: jsonResult.outfitIds };
-        }
-
-        default:
-            throw new Error(`Invalid action: ${action}`);
-    }
+    return new Response(JSON.stringify({ outfitIds }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
