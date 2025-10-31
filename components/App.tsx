@@ -96,6 +96,20 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    // This effect should only run once on mount to setup session and listeners.
+    
+    // 1. Handle payment status from URL params first
+    const urlParams = new URLSearchParams(window.location.search);
+    const paymentStatus = urlParams.get('payment');
+    if (paymentStatus === 'success') {
+        setAppScreen('payment_success');
+        window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (paymentStatus === 'canceled') {
+        setAppScreen('payment_failure');
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    // 2. Set up the session and auth listener
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
@@ -107,38 +121,37 @@ const App: React.FC = () => {
       }
     });
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
-      if (session?.user) {
-        if (appScreen === 'auth' || appScreen === 'landing') {
-          setAppScreen('start');
+      
+      // Only navigate on explicit sign-in or sign-out events.
+      // This prevents navigation on token refreshes (TOKEN_REFRESHED event).
+      if (event === 'SIGNED_IN') {
+        setAppScreen('start');
+        if (session?.user) {
+          fetchProfile(session.user.id);
+          fetchSavedModels(session.user.id);
+          fetchSavedOutfits(session.user.id);
         }
-        fetchProfile(session.user.id);
-        fetchSavedModels(session.user.id);
-        fetchSavedOutfits(session.user.id);
-      } else {
+      } else if (event === 'SIGNED_OUT') {
         setAppScreen('landing');
+        // Clear user-specific data
+        setSavedModels([]);
+        setSavedOutfits([]);
+        setCredits(0);
+        setModelImageUrl(null);
+        setOutfitHistory([]);
       }
     });
 
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('payment') === 'success') {
-        setAppScreen('payment_success');
-        window.history.replaceState({}, document.title, window.location.pathname);
-    } else if (urlParams.get('payment') === 'canceled') {
-        setAppScreen('payment_failure');
-        window.history.replaceState({}, document.title, window.location.pathname);
-    }
-
-
     return () => authListener.subscription.unsubscribe();
-  }, [appScreen, fetchProfile, fetchSavedModels, fetchSavedOutfits]);
+  }, [fetchProfile, fetchSavedModels, fetchSavedOutfits]);
 
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    setAppScreen('landing');
+    // The onAuthStateChange listener will handle setting the screen to 'landing'
   };
 
   const handleModelFinalized = (imageUrl: string) => {
@@ -351,6 +364,7 @@ const App: React.FC = () => {
   
   const handleDeleteOutfit = async (id: string) => {
       const { error } = await supabase.from('saved_outfits').delete().eq('id', id);
+      // Fix: Use 'error' instead of 'err' to match the destructured variable.
       if (error) showToast(getFriendlyErrorMessage(error, 'Failed to delete look'), 'error');
       else setSavedOutfits(savedOutfits.filter(o => o.id !== id));
   };
@@ -376,6 +390,7 @@ const App: React.FC = () => {
       case 'payment_failure': return <PaymentFailurePage onContinue={() => setAppScreen('start')} onTryAgain={() => setPurchaseModalOpen(true)} />;
       case 'dressing':
         const currentLayer = outfitHistory[currentOutfitIndex];
+        if (!currentLayer) return null; // Add a guard clause in case history is empty
         return (
           <div className="w-full h-full flex flex-col md:flex-row gap-6 p-4 md:p-6">
             {/* Left Panel */}
@@ -391,7 +406,7 @@ const App: React.FC = () => {
 
             {/* Center Canvas */}
             <div className="flex-grow flex flex-col items-center justify-center min-h-[400px]">
-              <Canvas imageUrl={currentLayer?.imageUrl} loadingMessage={loadingMessage} />
+              <Canvas imageUrl={currentLayer.imageUrl} loadingMessage={loadingMessage} />
             </div>
 
             {/* Right Panel */}
