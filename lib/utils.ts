@@ -9,6 +9,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// Fix: Update getFriendlyErrorMessage to correctly handle unknown error types from catch blocks.
 export function getFriendlyErrorMessage(error: unknown, context: string): string {
     let rawMessage = 'An unknown error occurred.';
     if (error instanceof Error) {
@@ -25,7 +26,7 @@ export function getFriendlyErrorMessage(error: unknown, context: string): string
             // It might be a JSON string like '{"error":{"message":"..."}}'
             const errorJson = JSON.parse(rawMessage);
             const nestedMessage = errorJson?.error?.message;
-            if (nestedMessage && nestedMessage.includes("Unsupported MIME type")) {
+            if (nestedMessage && typeof nestedMessage === 'string' && nestedMessage.includes("Unsupported MIME type")) {
                 const mimeType = nestedMessage.split(': ')[1] || 'unsupported';
                 return `File type '${mimeType}' is not supported. Please use a format like PNG, JPEG, or WEBP.`;
             }

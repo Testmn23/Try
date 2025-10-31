@@ -3,9 +3,21 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
+:root {
+  --background: #fafaf9; /* stone-50 */
+  --foreground: #1c1917; /* stone-900 */
+}
+
+html.dark {
+  --background: #0c0a09; /* stone-950 */
+  --foreground: #e7e5e4; /* stone-200 */
+}
+
+
 body {
-  background-color: #fff; /* Light gray background */
-  color: #2a2a2a; /* Dark text color */
+  background-color: var(--background);
+  color: var(--foreground);
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Animation for gentle fade-in of components */
@@ -51,6 +63,12 @@ body {
   animation: slide-up 0.6s cubic-bezier(0.25, 1, 0.5, 1) forwards;
 }
 
+/* Keyframes for the animated glowing border */
+@keyframes animated-border {
+  0% { --angle: 0deg; }
+  100% { --angle: 360deg; }
+}
+
 /* Custom scrollbar for a more integrated look */
 ::-webkit-scrollbar {
   width: 8px;
@@ -58,15 +76,15 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.05);
+  background: rgba(0, 0, 0, 0.1);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d1d5db; /* Light gray scrollbar */
+  background: #a8a29e; /* stone-400 */
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af; /* Darker gray on hover */
+  background: #78716c; /* stone-500 */
 }
