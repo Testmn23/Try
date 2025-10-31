@@ -164,7 +164,11 @@ async function handleGoogleAIRequest(action: string, payload: any) {
                     }
                 }
             });
-            const jsonResult = JSON.parse(response.text.trim());
+            const text = response.text;
+            if (!text) {
+                throw new Error("The AI model did not return any text for the outfit suggestion.");
+            }
+            const jsonResult = JSON.parse(text.trim());
             return { outfitIds: jsonResult.outfitIds };
         }
 
