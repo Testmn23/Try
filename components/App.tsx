@@ -590,7 +590,7 @@ const App: React.FC = () => {
 
   const handleDeleteWardrobeItem = (id: string) => {
     setWardrobe(prev => prev.filter(item => item.id !== id));
-    showToast("Item removed from your wardrobe.", 'success');
+    showToast("Item removed from your Garment Closet.", 'success');
   };
 
   const handleDownload = () => {

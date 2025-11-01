@@ -157,7 +157,7 @@ const WardrobePanel: React.FC<WardrobePanelProps> = ({ onGarmentSelect, activeGa
   return (
     <>
     <div className="pt-6 border-t border-stone-400/50 dark:border-stone-600/50">
-        <h2 className="text-xl font-playfair font-bold text-stone-800 dark:text-stone-200 mb-3">Wardrobe</h2>
+        <h2 className="text-xl font-playfair font-bold text-stone-800 dark:text-stone-200 mb-3">Garment Closet</h2>
         <div className="flex items-center border-b border-stone-200 dark:border-stone-800 mb-3">
             <button 
                 onClick={() => setActiveCategory('clothing')} 
