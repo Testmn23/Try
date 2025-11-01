@@ -6,6 +6,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Compare } from './ui/compare';
+import { buildAbsoluteUrl } from '../lib/utils';
 
 interface LandingPageProps {
   onEnter: () => void;
@@ -39,15 +40,15 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
         </div>
         <div className="w-full lg:w-1/2 flex flex-row items-center justify-center gap-4">
             <Compare
-              firstImage="/showcase-male-before.jpg"
-              secondImage="/showcase-male-after.png"
+              firstImage={buildAbsoluteUrl("/showcase-male-before.jpg")}
+              secondImage={buildAbsoluteUrl("/showcase-male-after.png")}
               slideMode="hover"
               autoplay={true}
               className="w-1/2 max-w-[240px] aspect-[2/3] rounded-2xl bg-stone-200 dark:bg-stone-800 shadow-2xl dark:shadow-stone-950"
             />
              <Compare
-              firstImage="/showcase-female-before.jpg"
-              secondImage="/showcase-female-after.png"
+              firstImage={buildAbsoluteUrl("/showcase-female-before.jpg")}
+              secondImage={buildAbsoluteUrl("/showcase-female-after.png")}
               slideMode="hover"
               autoplay={true}
               className="w-1/2 max-w-[240px] aspect-[2/3] rounded-2xl bg-stone-200 dark:bg-stone-800 shadow-2xl dark:shadow-stone-950"

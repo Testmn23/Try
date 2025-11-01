@@ -32,10 +32,29 @@ async function callApi(action: string, payload: any) {
         body: JSON.stringify({ action, payload: { ...payload, userId } }),
     });
 
-    const result = await response.json();
     if (!response.ok) {
-        throw new Error(result.error || `API call for action '${action}' failed.`);
+        let errorMessage = `API Error: ${response.status} ${response.statusText}`;
+        try {
+            const errorResult = await response.json();
+            if (errorResult.error) {
+                errorMessage = errorResult.error;
+            }
+        } catch (e) {
+            // The response is not JSON, fall back to text.
+            const textError = await response.text();
+            if (textError) {
+                // Check for common server error messages to provide a friendlier notice.
+                if (textError.toLowerCase().includes("server error") || textError.toLowerCase().includes("timed out")) {
+                    errorMessage = "A server error occurred, possibly due to a timeout. The model generation can sometimes take a while. Please try again.";
+                } else {
+                    errorMessage = textError.substring(0, 200); // Truncate long HTML errors
+                }
+            }
+        }
+        throw new Error(errorMessage);
     }
+
+    const result = await response.json();
     return result;
 }
 

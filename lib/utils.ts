@@ -39,3 +39,8 @@ export function getFriendlyErrorMessage(error: unknown, context: string): string
     
     return `${context}. ${rawMessage}`;
 }
+
+export function buildAbsoluteUrl(path: string): string {
+  const formattedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${window.location.origin}${formattedPath}`;
+}

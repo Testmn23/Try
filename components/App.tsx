@@ -458,8 +458,6 @@ const App: React.FC = () => {
         return [...prev, garmentInfo];
       });
     } catch (err) {
-      // FIX: The 'err' object from a catch block is of type 'unknown'.
-      // It is passed to getFriendlyErrorMessage, which is designed to safely handle 'unknown' types and return a user-friendly string.
       showToast(getFriendlyErrorMessage(err, 'Failed to apply garment'));
     } finally {
       setIsLoading(false);
