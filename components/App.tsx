@@ -31,14 +31,15 @@ import PurchaseCreditsModal from './PurchaseCreditsModal';
 import ImageCropModal from './ImageCropModal';
 import Toast from './Toast';
 import { PlusIcon } from './icons';
+import Spinner from './Spinner';
 
-type AppScreen = 'landing' | 'auth' | 'start' | 'dressing' | 'payment_success' | 'payment_failure';
+type AppScreen = 'initializing' | 'landing' | 'auth' | 'start' | 'dressing' | 'payment_success' | 'payment_failure';
 
 const App: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [credits, setCredits] = useState(0);
-  const [appScreen, setAppScreen] = useState<AppScreen>('landing');
+  const [appScreen, setAppScreen] = useState<AppScreen>('initializing');
   const [modelImageUrl, setModelImageUrl] = useState<string | null>(null);
   const [outfitHistory, setOutfitHistory] = useState<OutfitLayer[]>([]);
   const [currentOutfitIndex, setCurrentOutfitIndex] = useState(0);
@@ -96,47 +97,34 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // This effect should only run once on mount to setup session and listeners.
-    
-    // 1. Handle payment status from URL params first
-    const urlParams = new URLSearchParams(window.location.search);
-    const paymentStatus = urlParams.get('payment');
-    if (paymentStatus === 'success') {
-        setAppScreen('payment_success');
-        window.history.replaceState({}, document.title, window.location.pathname);
-    } else if (paymentStatus === 'canceled') {
-        setAppScreen('payment_failure');
-        window.history.replaceState({}, document.title, window.location.pathname);
-    }
-
-    // 2. Set up the session and auth listener
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        setAppScreen('start');
-        fetchProfile(session.user.id);
-        fetchSavedModels(session.user.id);
-        fetchSavedOutfits(session.user.id);
-      }
-    });
-
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
-      setUser(session?.user ?? null);
-      
-      // Only navigate on explicit sign-in or sign-out events.
-      // This prevents navigation on token refreshes (TOKEN_REFRESHED event).
-      if (event === 'SIGNED_IN') {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+
+      // Determine the correct screen *after* the session is known.
+      if (currentUser) {
         setAppScreen('start');
-        if (session?.user) {
-          fetchProfile(session.user.id);
-          fetchSavedModels(session.user.id);
-          fetchSavedOutfits(session.user.id);
+        fetchProfile(currentUser.id);
+        fetchSavedModels(currentUser.id);
+        fetchSavedOutfits(currentUser.id);
+      } else {
+        // If there's a payment status, show that screen instead of landing.
+        const urlParams = new URLSearchParams(window.location.search);
+        const paymentStatus = urlParams.get('payment');
+        if (paymentStatus === 'success') {
+          setAppScreen('payment_success');
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } else if (paymentStatus === 'canceled') {
+          setAppScreen('payment_failure');
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } else {
+          setAppScreen('landing');
         }
-      } else if (event === 'SIGNED_OUT') {
-        setAppScreen('landing');
-        // Clear user-specific data
+      }
+
+      // Handle SIGNED_OUT explicitly to clear data
+      if (event === 'SIGNED_OUT') {
         setSavedModels([]);
         setSavedOutfits([]);
         setCredits(0);
@@ -364,7 +352,6 @@ const App: React.FC = () => {
   
   const handleDeleteOutfit = async (id: string) => {
       const { error } = await supabase.from('saved_outfits').delete().eq('id', id);
-      // Fix: Use 'error' instead of 'err' to match the destructured variable.
       if (error) showToast(getFriendlyErrorMessage(error, 'Failed to delete look'), 'error');
       else setSavedOutfits(savedOutfits.filter(o => o.id !== id));
   };
@@ -372,6 +359,7 @@ const App: React.FC = () => {
 
   const renderScreen = () => {
     switch (appScreen) {
+      case 'initializing': return <div className="w-full h-full flex items-center justify-center"><Spinner /></div>;
       case 'landing': return <LandingPage onEnter={() => setAppScreen(user ? 'start' : 'auth')} />;
       case 'auth': return <Auth />;
       case 'start': return (
