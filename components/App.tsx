@@ -37,12 +37,12 @@ import SavedLooksPanel from './SavedLooksPanel';
 
 
 const POSE_INSTRUCTIONS = [
-  "Full frontal view, hands on hips",
-  "Slightly turned, 3/4 view",
-  "Side profile view",
-  "Jumping in the air, mid-action shot",
-  "Walking towards camera",
-  "Leaning against a wall",
+  "Power Pose, Hands on Hips",
+  "Classic 3/4 Turn",
+  "Elegant Side Profile",
+  "Joyful Leap",
+  "Confident Stride",
+  "Casually Leaning",
 ];
 
 
