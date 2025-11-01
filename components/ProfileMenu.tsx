@@ -60,7 +60,7 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({ session, credits, theme, setT
           >
             <div className="p-4">
               <div className="border-b border-stone-200 dark:border-stone-800 pb-3 mb-3">
-                <p className="text-sm font-semibold text-stone-800 dark:text-stone-200 truncate" title={session.user.email ?? ''}>
+                <p className="text-sm font-semibold text-stone-800 dark:text-stone-200 truncate" title={session.user.email}>
                   {session.user.email}
                 </p>
               </div>

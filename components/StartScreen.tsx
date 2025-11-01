@@ -151,12 +151,10 @@ const StartScreen: React.FC<StartScreenProps> = ({
                 <div className="w-full grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {savedModels.map(model => (
                     <div key={model.id} className="relative group aspect-square">
-                        {/* Fix: Property 'imageUrl' does not exist on type 'SavedModel'. Did you mean 'image_url'? */}
-                        <img src={model.image_url} alt={model.name} className="w-full h-full object-cover rounded-lg border border-stone-200 dark:border-stone-800" />
+                        <img src={model.imageUrl} alt={model.name} className="w-full h-full object-cover rounded-lg border border-stone-200 dark:border-stone-800" />
                         <div className="absolute inset-0 bg-stone-950/70 rounded-lg flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 p-2">
                            <p className="text-white font-bold text-sm text-center truncate w-full mb-2">{model.name}</p>
-                           {/* Fix: Property 'imageUrl' does not exist on type 'SavedModel'. Did you mean 'image_url'? */}
-                           <button onClick={() => onModelFinalized(model.image_url)} className="w-full bg-fuchsia-500 text-white font-semibold py-2 px-3 rounded-md text-sm hover:bg-fuchsia-600 transition-colors">
+                           <button onClick={() => onModelFinalized(model.imageUrl)} className="w-full bg-fuchsia-500 text-white font-semibold py-2 px-3 rounded-md text-sm hover:bg-fuchsia-600 transition-colors">
                                 Use
                            </button>
                            <button onClick={() => onDeleteModel(model.id)} className="absolute top-1 right-1 p-1 rounded-full bg-black/50 text-white/80 hover:bg-red-500/80 hover:text-white transition-colors" aria-label="Delete model">
