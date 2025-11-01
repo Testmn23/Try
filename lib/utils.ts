@@ -9,7 +9,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// Fix: Update getFriendlyErrorMessage to correctly handle unknown error types from catch blocks.
+// FIX: Update getFriendlyErrorMessage to safely handle 'unknown' error types from catch blocks.
 export function getFriendlyErrorMessage(error: unknown, context: string): string {
     let rawMessage = 'An unknown error occurred.';
     if (error instanceof Error) {

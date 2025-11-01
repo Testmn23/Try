@@ -15,7 +15,6 @@ import WardrobePanel from './WardrobeModal';
 import OutfitStack from './OutfitStack';
 import { generateVirtualTryOnImage, generatePoseVariation, generateImageVariation, suggestOutfit } from '../services/geminiService';
 import { OutfitLayer, WardrobeItem, Theme, SavedModel, SavedOutfit, ToastMessage } from '../types';
-// Fix: Import missing ChevronUpIcon and ChevronDownIcon.
 import { SparklesIcon, DownloadIcon, BookmarkIcon, ChevronUpIcon, ChevronDownIcon } from './icons';
 import { defaultWardrobe } from '../wardrobe';
 import Footer from './Footer';
@@ -459,7 +458,9 @@ const App: React.FC = () => {
         return [...prev, garmentInfo];
       });
     } catch (err) {
-      showToast(getFriendlyErrorMessage(String(err), 'Failed to apply garment'));
+      // FIX: The 'err' object from a catch block is of type 'unknown'.
+      // It is passed to getFriendlyErrorMessage, which is designed to safely handle 'unknown' types and return a user-friendly string.
+      showToast(getFriendlyErrorMessage(err, 'Failed to apply garment'));
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
@@ -515,7 +516,7 @@ const App: React.FC = () => {
         return newHistory;
       });
     } catch (err) {
-      showToast(getFriendlyErrorMessage(String(err), 'Failed to change pose'));
+      showToast(getFriendlyErrorMessage(err, 'Failed to change pose'));
       setCurrentPoseIndex(prevPoseIndex);
     } finally {
       setIsLoading(false);
@@ -545,7 +546,7 @@ const App: React.FC = () => {
         return newHistory;
       });
     } catch (err) {
-      showToast(getFriendlyErrorMessage(String(err), 'Failed to apply changes'));
+      showToast(getFriendlyErrorMessage(err, 'Failed to apply changes'));
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
@@ -580,7 +581,7 @@ const App: React.FC = () => {
                 }
             }
         } catch (err) {
-          showToast(getFriendlyErrorMessage(String(err), 'Style Mixtape failed'));
+          showToast(getFriendlyErrorMessage(err, 'Style Mixtape failed'));
         } finally {
           setIsLoading(false);
           setLoadingMessage('');
