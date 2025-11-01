@@ -15,6 +15,7 @@ import WardrobePanel from './WardrobeModal';
 import OutfitStack from './OutfitStack';
 import { generateVirtualTryOnImage, generatePoseVariation, generateImageVariation, suggestOutfit } from '../services/geminiService';
 import { OutfitLayer, WardrobeItem, Theme, SavedModel, SavedOutfit, ToastMessage } from '../types';
+// Fix: Import missing ChevronUpIcon and ChevronDownIcon.
 import { SparklesIcon, DownloadIcon, BookmarkIcon, ChevronUpIcon, ChevronDownIcon } from './icons';
 import { defaultWardrobe } from '../wardrobe';
 import Footer from './Footer';
@@ -458,6 +459,7 @@ const App: React.FC = () => {
         return [...prev, garmentInfo];
       });
     } catch (err) {
+      // Fix: Pass the 'unknown' error object directly to getFriendlyErrorMessage.
       showToast(getFriendlyErrorMessage(err, 'Failed to apply garment'));
     } finally {
       setIsLoading(false);
@@ -514,6 +516,7 @@ const App: React.FC = () => {
         return newHistory;
       });
     } catch (err) {
+      // Fix: Pass the 'unknown' error object directly to getFriendlyErrorMessage.
       showToast(getFriendlyErrorMessage(err, 'Failed to change pose'));
       setCurrentPoseIndex(prevPoseIndex);
     } finally {
@@ -544,6 +547,7 @@ const App: React.FC = () => {
         return newHistory;
       });
     } catch (err) {
+      // Fix: Pass the 'unknown' error object directly to getFriendlyErrorMessage.
       showToast(getFriendlyErrorMessage(err, 'Failed to apply changes'));
     } finally {
       setIsLoading(false);
@@ -579,6 +583,7 @@ const App: React.FC = () => {
                 }
             }
         } catch (err) {
+          // Fix: Pass the 'unknown' error object directly to getFriendlyErrorMessage.
           showToast(getFriendlyErrorMessage(err, 'Style Mixtape failed'));
         } finally {
           setIsLoading(false);

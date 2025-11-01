@@ -9,7 +9,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// Update getFriendlyErrorMessage to safely handle 'unknown' error types from catch blocks.
+// Fix: Update getFriendlyErrorMessage to correctly handle unknown error types from catch blocks.
 export function getFriendlyErrorMessage(error: unknown, context: string): string {
     let rawMessage = 'An unknown error occurred.';
     if (error instanceof Error) {
@@ -38,9 +38,4 @@ export function getFriendlyErrorMessage(error: unknown, context: string): string
     }
     
     return `${context}. ${rawMessage}`;
-}
-
-export function buildAbsoluteUrl(path: string): string {
-  const formattedPath = path.startsWith('/') ? path : `/${path}`;
-  return `${window.location.origin}${formattedPath}`;
 }
